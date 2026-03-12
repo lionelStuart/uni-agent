@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     model_name: str = Field(default="openai:gpt-4.1-mini")
     workspace: Path = Field(default_factory=lambda: Path(".").resolve())
     skills_dir: Path = Field(default_factory=lambda: Path("skills").resolve())
+    task_log_dir: Path = Field(default_factory=lambda: Path(".uni-agent/runs").resolve())
     log_level: str = "INFO"
 
 
 def get_settings() -> Settings:
     return Settings()
-

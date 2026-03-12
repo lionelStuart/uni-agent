@@ -37,14 +37,24 @@ class PlanStep(BaseModel):
     description: str
     tool: str | None = None
     skill: str | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
     status: TaskStatus = TaskStatus.PENDING
+    output: str = ""
 
 
 class TaskResult(BaseModel):
+    run_id: str | None = None
     task: str
     status: TaskStatus
     selected_skills: list[str] = Field(default_factory=list)
     available_tools: list[str] = Field(default_factory=list)
     plan: list[PlanStep] = Field(default_factory=list)
     output: str = ""
+    error: str | None = None
 
+
+class TaskRunRecord(BaseModel):
+    run_id: str
+    task: str
+    status: TaskStatus
+    result: TaskResult
