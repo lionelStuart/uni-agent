@@ -1,0 +1,15 @@
+name: general-assistant
+version: "0.1.0"
+description: Generic fallback skill for task understanding and plan setup.
+triggers:
+  - write
+  - summarize
+  - code
+  - document
+priority: 1
+required_tools: []
+allowed_tools:
+  - file_read
+  - search_workspace
+entry: prompt.md
+
