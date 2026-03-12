@@ -12,6 +12,7 @@
 
 - [设计文档](/Users/a1021500406/private/uni-agent/docs/设计文档.md)
 - [开发文档](/Users/a1021500406/private/uni-agent/docs/开发文档.md)
+- [进度文档](/Users/a1021500406/private/uni-agent/docs/进度文档.md)
 
 并已初始化第一版 Python 工程骨架：
 
@@ -20,6 +21,22 @@
 - `SkillLoader`
 - `ToolRegistry`
 - 本地 `LocalSandbox` 雏形
+
+## 开发约束
+
+后续开发必须遵循以下文档：
+
+- [设计文档](/Users/a1021500406/private/uni-agent/docs/设计文档.md)
+- [开发文档](/Users/a1021500406/private/uni-agent/docs/开发文档.md)
+- [进度文档](/Users/a1021500406/private/uni-agent/docs/进度文档.md)
+
+其中：
+
+- 设计文档定义项目边界和架构原则
+- 开发文档定义技术栈、模块拆解、实现步骤和测试项
+- 进度文档定义开发计划、每轮进展和下一轮 TODO
+
+如果实现与文档不一致，应先更新文档，再继续开发。
 
 ## 当前定位
 
