@@ -83,6 +83,18 @@ class PydanticAIPlanner(Planner):
 
         tool_names_set = {tool.name for tool in available_tools}
         allowed = self._resolve_allowed_tools(selected_skills, tool_names_set)
+        mem_q = self._fallback._memory_search_query(task.strip())
+        if mem_q is not None and "memory_search" in allowed:
+            selected_skill = selected_skills[0].name if selected_skills else None
+            return [
+                PlanStep(
+                    id="step-1",
+                    description=f"Search saved session memory for: {mem_q[:120]!r}.",
+                    tool="memory_search",
+                    skill=selected_skill,
+                    arguments={"query": mem_q},
+                )
+            ]
         tool_lines = "\n".join(f"- {t.name}: {t.description}" for t in available_tools if t.name in allowed)
         user_prompt = f"Task:\n{task}\n\n"
         if session_context:
@@ -172,4 +184,17 @@ class PydanticAIPlanner(Planner):
             return isinstance(arguments.get("url"), str) and bool(arguments.get("url"))
         if tool == "search_workspace":
             return isinstance(arguments.get("query"), str)
+        if tool == "memory_search":
+            if not isinstance(arguments.get("query"), str) or not arguments.get("query", "").strip():
+                return False
+            if "limit" not in arguments:
+                return True
+            lim = arguments["limit"]
+            if isinstance(lim, bool):
+                return False
+            if isinstance(lim, int):
+                return True
+            if isinstance(lim, str) and lim.strip().isdigit():
+                return True
+            return False
         return False

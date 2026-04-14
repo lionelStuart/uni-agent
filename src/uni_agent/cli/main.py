@@ -51,17 +51,6 @@ def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orche
         command_timeout=settings.sandbox_command_timeout_seconds,
         approve_non_allowlisted=_sandbox_approval_callback(settings),
     )
-    register_builtin_handlers(
-        tool_registry,
-        settings.workspace,
-        sandbox,
-        http_fetch_max_bytes=settings.http_fetch_max_bytes,
-        http_fetch_allow_private_networks=settings.http_fetch_allow_private_networks,
-        http_fetch_allowed_hosts=parse_http_fetch_allowed_hosts(settings.http_fetch_allowed_hosts),
-        http_fetch_timeout_seconds=settings.sandbox_command_timeout_seconds,
-    )
-    skill_loader = SkillLoader(settings.skills_dir)
-    heuristic = HeuristicPlanner()
     provider = EnvLLMProvider(
         settings.model_name,
         openai_base_url=settings.openai_base_url,
@@ -70,6 +59,23 @@ def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orche
     model_settings = None
     if settings.llm_temperature is not None:
         model_settings = {"temperature": settings.llm_temperature}
+    register_builtin_handlers(
+        tool_registry,
+        settings.workspace,
+        sandbox,
+        http_fetch_max_bytes=settings.http_fetch_max_bytes,
+        http_fetch_allow_private_networks=settings.http_fetch_allow_private_networks,
+        http_fetch_allowed_hosts=parse_http_fetch_allowed_hosts(settings.http_fetch_allowed_hosts),
+        http_fetch_timeout_seconds=settings.sandbox_command_timeout_seconds,
+        memory_dir=settings.memory_dir,
+        memory_llm_provider=provider,
+        memory_search_use_llm=settings.memory_search_use_llm,
+        memory_search_max_hits=settings.memory_search_max_hits,
+        memory_search_model_settings=model_settings,
+        memory_search_keyword_retries=settings.llm_retries,
+    )
+    skill_loader = SkillLoader(settings.skills_dir)
+    heuristic = HeuristicPlanner()
 
     allowed_shell = frozenset(allowed_commands)
     if settings.planner_backend == "heuristic":

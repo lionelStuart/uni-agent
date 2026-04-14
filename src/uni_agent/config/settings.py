@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 from dotenv import load_dotenv
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +33,32 @@ class Settings(BaseSettings):
     skills_dir: Path = Field(default_factory=lambda: Path("skills").resolve())
     task_log_dir: Path = Field(default_factory=lambda: Path(".uni-agent/runs").resolve())
     session_dir: Path = Field(default_factory=lambda: Path(".uni-agent/sessions").resolve())
+    memory_dir: Path | None = Field(
+        default=None,
+        description=(
+            "Memory store directory. Unset → ``<UNI_AGENT_WORKSPACE>/.uni-agent/memory``. "
+            "Relative paths resolve under ``workspace`` (not process cwd)."
+        ),
+    )
+    memory_extract_enabled: bool = Field(
+        default=True,
+        description="If true, agent client persists new session turns to memory_dir after idle delay.",
+    )
+    memory_idle_extract_seconds: float = Field(
+        default=20.0,
+        ge=0.0,
+        description="REPL idle seconds before flushing new session entries to memory_dir; 0 disables idle flush.",
+    )
+    memory_search_use_llm: bool = Field(
+        default=True,
+        description="If true and an LLM is configured, memory_search expands query via LLM, matches L0, then answers from L1.",
+    )
+    memory_search_max_hits: int = Field(
+        default=12,
+        ge=1,
+        le=30,
+        description="Max L1 memory rows passed to the synthesis step when using LLM memory_search.",
+    )
     log_level: str = "INFO"
     sandbox_allowed_commands: str = Field(default=DEFAULT_SANDBOX_ALLOWED_COMMANDS)
     sandbox_prompt_for_disallowed: bool = Field(
@@ -63,6 +89,18 @@ class Settings(BaseSettings):
         default=True,
         description="If true and an LLM is configured, synthesize a final natural-language conclusion after the run.",
     )
+
+    @model_validator(mode="after")
+    def _anchor_memory_dir_under_workspace(self) -> Self:
+        ws = self.workspace.resolve()
+        md = self.memory_dir
+        if md is None:
+            anchored = (ws / ".uni-agent" / "memory").resolve()
+        else:
+            p = Path(md)
+            anchored = p.resolve() if p.is_absolute() else (ws / p).resolve()
+        object.__setattr__(self, "memory_dir", anchored)
+        return self
 
 
 def get_settings() -> Settings:

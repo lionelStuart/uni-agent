@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from uni_agent.agent.llm import LLMProvider
+from uni_agent.agent.memory_llm_search import run_memory_search_llm
+from uni_agent.observability.local_memory import search_memory_directory
 from uni_agent.sandbox.runner import LocalSandbox
 from uni_agent.tools.http_fetch_policy import (
     assert_http_fetch_host_allowlist,
@@ -24,8 +28,15 @@ def register_builtin_handlers(
     http_fetch_allow_private_networks: bool = False,
     http_fetch_allowed_hosts: frozenset[str] = frozenset(),
     http_fetch_timeout_seconds: int = 30,
+    memory_dir: Path | None = None,
+    memory_llm_provider: LLMProvider | None = None,
+    memory_search_use_llm: bool = False,
+    memory_search_max_hits: int = 12,
+    memory_search_model_settings: dict[str, Any] | None = None,
+    memory_search_keyword_retries: int = 1,
 ) -> None:
     resolved_workspace = workspace.resolve()
+    resolved_memory_dir = (memory_dir or (resolved_workspace / ".uni-agent" / "memory")).resolve()
 
     def shell_exec(arguments: dict) -> str:
         command = arguments.get("command")
@@ -78,6 +89,40 @@ def register_builtin_handlers(
         text = body.decode("utf-8", errors="replace")
         return _truncate(f"{text}{suffix}")
 
+    def memory_search(arguments: dict) -> str:
+        query = arguments.get("query")
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("memory_search requires a non-empty 'query' string.")
+        raw_limit = arguments.get("limit", 20)
+        if raw_limit is None:
+            limit = 20
+        elif isinstance(raw_limit, int):
+            limit = raw_limit
+        else:
+            try:
+                limit = int(raw_limit)
+            except (TypeError, ValueError):
+                limit = 20
+        limit = max(1, min(50, limit))
+        max_entries = min(50, max(limit, memory_search_max_hits))
+        if (
+            memory_llm_provider is not None
+            and memory_search_use_llm
+            and memory_llm_provider.is_available()
+        ):
+            try:
+                return run_memory_search_llm(
+                    query.strip(),
+                    resolved_memory_dir,
+                    memory_llm_provider,
+                    model_settings=memory_search_model_settings,
+                    keyword_retries=memory_search_keyword_retries,
+                    max_hits=max_entries,
+                )
+            except Exception:
+                pass
+        return search_memory_directory(resolved_memory_dir, query.strip(), limit=limit)
+
     def search_workspace(arguments: dict) -> str:
         query = arguments.get("query")
         if not isinstance(query, str):
@@ -103,6 +148,7 @@ def register_builtin_handlers(
     tool_registry.attach_handler("file_write", file_write)
     tool_registry.attach_handler("http_fetch", http_fetch)
     tool_registry.attach_handler("search_workspace", search_workspace)
+    tool_registry.attach_handler("memory_search", memory_search)
 
 
 def _resolve_workspace_path(workspace: Path, raw_path: str) -> Path:

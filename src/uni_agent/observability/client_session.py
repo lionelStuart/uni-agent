@@ -40,6 +40,11 @@ class ClientSession(BaseModel):
     updated_at: str
     workspace: str = ""
     entries: list[ClientSessionRunEntry] = Field(default_factory=list)
+    memory_last_extracted_index: int = Field(
+        default=0,
+        ge=0,
+        description="Entries in ``entries[:index]`` have been persisted to the local memory folder.",
+    )
 
 
 class SessionStore:

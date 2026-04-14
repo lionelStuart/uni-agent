@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 import typer
 
+from uni_agent.agent.llm import EnvLLMProvider
+from uni_agent.agent.memory_llm_search import run_memory_search_llm
 from uni_agent.agent.orchestrator import StreamEventCallback
-from uni_agent.config.settings import get_settings
+from uni_agent.config.settings import Settings, get_settings
 from uni_agent.observability.client_session import (
     SessionStore,
     build_session_context_for_planner,
     task_result_to_entry,
 )
+from uni_agent.observability.local_memory import (
+    MemoryPersistReport,
+    count_memory_records,
+    persist_incremental_for_client_session,
+    search_memory_directory,
+)
+
+_memory_activity_gen = 0
+_memory_idle_lock = threading.Lock()
 
 
 def _human_stream_event(ev: dict[str, Any]) -> None:
@@ -86,12 +99,53 @@ Commands:
   new             Start a new session (current one saved first if it has entries).
   sessions        List recent session files.
   status          Show current session id and run count.
+  memory search <q>   Search memory (LLM keywords→L0→L1 answer when configured; else substring).
+  memory status       Show memory dir, record count, extraction checkpoint.
+  memory extract      Flush new session entries to memory immediately.
   help            This help.
   exit / quit     Leave the client.
 
 Environment matches ``agent run`` (see UNI_AGENT_* in settings).
 """.strip()
     )
+
+
+def _echo_memory_flush_summary(settings: Settings, report: MemoryPersistReport) -> None:
+    """Human-readable memory persist summary on stderr (does not clutter task JSON on stdout)."""
+    if report.written == 0:
+        return
+    typer.secho("", err=True)
+    typer.secho("── memory updated ──", fg=typer.colors.MAGENTA, err=True)
+    typer.secho(f"  directory: {settings.memory_dir}", dim=True, err=True)
+    typer.secho(f"  checkpoint → {report.new_checkpoint} (flushed {report.written} record(s))", err=True)
+    for it in report.items:
+        label = "new" if it.action == "created" else "update"
+        typer.secho(
+            f"  · [{label}] run_id={it.run_id}  file={it.file_name}",
+            err=True,
+        )
+        typer.secho(f"    L0: {it.l0_preview}", dim=True, err=True)
+
+
+def _schedule_idle_memory_flush(session, store, settings) -> None:
+    """After a quiet period at the prompt, persist turns not yet written to ``memory_dir``."""
+    if not settings.memory_extract_enabled or settings.memory_idle_extract_seconds <= 0:
+        return
+    expected = _memory_activity_gen
+
+    def worker() -> None:
+        time.sleep(settings.memory_idle_extract_seconds)
+        if _memory_activity_gen != expected:
+            return
+        with _memory_idle_lock:
+            if _memory_activity_gen != expected:
+                return
+            report = persist_incremental_for_client_session(memory_dir=settings.memory_dir, session=session)
+            if report.written:
+                store.save(session)
+                _echo_memory_flush_summary(settings, report)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def run_interactive_client(
@@ -145,6 +199,68 @@ def run_interactive_client(
             typer.echo(f"session={session.id}  runs={len(session.entries)}  workspace={session.workspace}")
             continue
 
+        if lower.startswith("memory "):
+            rest = line[7:].strip()
+            rlow = rest.lower()
+            if rlow.startswith("search "):
+                q = rest[7:].strip()
+                if not q:
+                    typer.secho("Usage: memory search <query>", fg=typer.colors.RED)
+                    continue
+                model_settings = None
+                if settings.llm_temperature is not None:
+                    model_settings = {"temperature": settings.llm_temperature}
+                prov = EnvLLMProvider(
+                    settings.model_name,
+                    openai_base_url=settings.openai_base_url,
+                    openai_api_key=settings.openai_api_key,
+                )
+                if settings.memory_search_use_llm and prov.is_available():
+                    try:
+                        typer.echo(
+                            run_memory_search_llm(
+                                q,
+                                settings.memory_dir,
+                                prov,
+                                model_settings=model_settings,
+                                keyword_retries=settings.llm_retries,
+                                max_hits=settings.memory_search_max_hits,
+                            )
+                        )
+                    except Exception as exc:
+                        typer.secho(
+                            f"[memory search LLM error, substring fallback] {exc}",
+                            fg=typer.colors.YELLOW,
+                            err=True,
+                        )
+                        typer.echo(search_memory_directory(settings.memory_dir, q))
+                else:
+                    typer.echo(search_memory_directory(settings.memory_dir, q))
+                continue
+            if rlow == "status":
+                nrec = count_memory_records(settings.memory_dir)
+                typer.echo(
+                    f"memory_dir={settings.memory_dir}  records={nrec}  "
+                    f"checkpoint={session.memory_last_extracted_index}/{len(session.entries)}"
+                )
+                continue
+            if rlow == "extract":
+                with _memory_idle_lock:
+                    report = persist_incremental_for_client_session(
+                        memory_dir=settings.memory_dir, session=session
+                    )
+                    store.save(session)
+                if report.written:
+                    _echo_memory_flush_summary(settings, report)
+                else:
+                    typer.secho("(memory extract: nothing new to flush)", dim=True, err=True)
+                continue
+            typer.secho(
+                "Usage: memory search <query> | memory status | memory extract",
+                fg=typer.colors.RED,
+            )
+            continue
+
         if lower == "sessions":
             rows = store.list_sessions(limit=25)
             if not rows:
@@ -175,6 +291,9 @@ def run_interactive_client(
             continue
 
         # Task line
+        global _memory_activity_gen
+        _memory_activity_gen += 1
+
         task = line
         started = datetime.now(timezone.utc).isoformat()
         from uni_agent.cli.main import build_orchestrator
@@ -193,3 +312,5 @@ def run_interactive_client(
         store.save(session)
 
         typer.echo(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
+
+        _schedule_idle_memory_flush(session, store, settings)

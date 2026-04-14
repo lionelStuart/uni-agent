@@ -19,6 +19,15 @@ class Planner:
 
 
 class HeuristicPlanner(Planner):
+    _MEMORY_SEARCH_EN = re.compile(r"(?i)^memory\s+search(?:\s+for)?\s+(.+)$")
+    _MEMORY_SEARCH_CN = re.compile(r"(?:^|\s)(?:搜索|查找|查询)\s*记忆\s*[：:]\s*(.+)$")
+    # Prefer persisted session memory over generic chat (planner LLM otherwise tends to shell_exec+echo).
+    _RECALL_SELF = re.compile(
+        r"(?i)(?:^|[\s，,])"
+        r"(?:我是谁|我叫什么|你认识我吗|还记得我吗|"
+        r"我之前说过(?:什么)?|我以前说过(?:什么)?|"
+        r"who\s+am\s+i|what(?:'s|\s+is)\s+my\s+name|do\s+you\s+remember\s+me)"
+    )
     _PATH_PATTERN = re.compile(r"(?P<path>[\w./-]+\.[A-Za-z0-9]+)")
     _URL_PATTERN = re.compile(r"(https?://[^\s\"'<>]+)", re.IGNORECASE)
     _WRITE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -51,6 +60,18 @@ class HeuristicPlanner(Planner):
         tool_names = {tool.name for tool in available_tools}
         allowed_tools = self._resolve_allowed_tools(selected_skills, tool_names)
         selected_skill = selected_skills[0].name if selected_skills else None
+
+        mem_q = self._memory_search_query(task.strip())
+        if mem_q is not None and "memory_search" in allowed_tools:
+            return [
+                PlanStep(
+                    id="step-1",
+                    description=f"Search saved session memory for: {mem_q[:120]!r}.",
+                    tool="memory_search",
+                    skill=selected_skill,
+                    arguments={"query": mem_q},
+                )
+            ]
 
         steps: list[PlanStep] = []
         write_spec = self._extract_file_write(effective_task)
@@ -151,6 +172,20 @@ class HeuristicPlanner(Planner):
                     )
                 )
         return steps
+
+    def _memory_search_query(self, task: str) -> str | None:
+        t = task.strip()
+        m = self._MEMORY_SEARCH_EN.match(t)
+        if m:
+            q = m.group(1).strip()
+            return q if q else None
+        m2 = self._MEMORY_SEARCH_CN.search(t)
+        if m2:
+            q = m2.group(1).strip()
+            return q if q else None
+        if self._RECALL_SELF.search(t):
+            return t
+        return None
 
     def _extract_file_write(self, task: str) -> tuple[str, str] | None:
         for pattern in self._WRITE_PATTERNS:

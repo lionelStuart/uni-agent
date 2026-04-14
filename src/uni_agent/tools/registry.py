@@ -48,6 +48,14 @@ class ToolRegistry:
                     "Queries `*`, `**`, `.*`, or whitespace-only list files in the workspace."
                 ),
             ),
+            ToolSpec(
+                name="memory_search",
+                description=(
+                    "Recall saved client-session memory: when an LLM is configured, expands `query` into keywords, "
+                    "matches L0 index lines, then reads matching L1 records and returns a synthesized answer; "
+                    "otherwise substring search on the index. Optional `limit` (1–50) caps rows considered."
+                ),
+            ),
         ):
             self.register(tool)
 

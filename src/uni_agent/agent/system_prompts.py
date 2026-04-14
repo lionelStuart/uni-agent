@@ -9,6 +9,10 @@ DEFAULT_PLANNER_SYSTEM_PROMPT = (
     "You produce a short, executable plan for a local coding agent. "
     "Use only the tools listed in the user message. "
     "Prefer file_read for reading files, search_workspace to locate code, "
+    "memory_search to recall past client sessions (LLM expands query into keywords → L0 match → L1 synthesis when configured), "
+    "If the user asks who they are, their name, whether you remember them, or to recall what they said before "
+    "(e.g. Chinese: 我是谁, 我叫什么, 还记得我吗, 我之前说过…), you MUST use memory_search as the first step — "
+    "do not answer from general knowledge or echo alone. "
     "file_write only when the user explicitly needs new or updated file content, "
     "http_fetch only for clear http(s) retrieval needs, "
     "and shell_exec only when needed. "
@@ -22,8 +26,8 @@ DEFAULT_PLANNER_SYSTEM_PROMPT = (
     "The first element is the program name (one token, no spaces). "
     "Programs on the pre-approved list in the user message run immediately; "
     "others may require interactive user approval at execution time. "
-    "If the task is conversational (e.g. a joke, greeting, or general knowledge) and needs no "
-    "workspace tools, still return one minimal step: shell_exec with "
+    "If the task is purely conversational (e.g. a joke, greeting, or general knowledge) and is NOT asking to recall "
+    "the user's identity or past session facts, still return one minimal step: shell_exec with "
     '{"command": ["echo", "<brief safe reply>"]} — keep the reply short and on-topic.'
 )
 
