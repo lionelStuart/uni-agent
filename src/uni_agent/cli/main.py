@@ -151,6 +151,26 @@ def run_task(
     typer.echo(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
 
 
+@app.command("client")
+def client_cmd(
+    stream: bool = typer.Option(
+        True,
+        "--stream/--no-stream",
+        help="Show human-readable execution progress on stderr during each task.",
+    ),
+    session: str | None = typer.Option(
+        None,
+        "--session",
+        "-s",
+        help="Load an existing session id or id prefix instead of creating a new one.",
+    ),
+) -> None:
+    """Interactive REPL: new time-based session by default; persist after each task; ``load <id>`` inside."""
+    from uni_agent.cli.client_shell import run_interactive_client
+
+    run_interactive_client(stream=stream, session_id=session)
+
+
 @app.command("replay")
 def replay_task(
     run_id: str,

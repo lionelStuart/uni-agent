@@ -80,7 +80,13 @@ class Orchestrator:
         if self._stream_event is not None:
             self._stream_event(event)
 
-    def run(self, task: str, plan_override: list[PlanStep] | None = None) -> TaskResult:
+    def run(
+        self,
+        task: str,
+        plan_override: list[PlanStep] | None = None,
+        *,
+        session_context: str | None = None,
+    ) -> TaskResult:
         run_id = self.task_store.next_run_id()
         skills = self.skill_loader.load_all()
         matched_skills = self.skill_matcher.match(task, skills)
@@ -123,6 +129,7 @@ class Orchestrator:
                     selected_skills,
                     available_tools,
                     prior_context=prior,
+                    session_context=session_context,
                 )
 
                 if not plan:

@@ -85,16 +85,26 @@ class PydanticAIPlanner(Planner):
         available_tools: list[ToolSpec],
         *,
         prior_context: str | None = None,
+        session_context: str | None = None,
     ) -> list[PlanStep]:
         if not self._provider.is_available():
             return self._fallback.create_plan(
-                task, selected_skills, available_tools, prior_context=prior_context
+                task,
+                selected_skills,
+                available_tools,
+                prior_context=prior_context,
+                session_context=session_context,
             )
 
         tool_names_set = {tool.name for tool in available_tools}
         allowed = self._resolve_allowed_tools(selected_skills, tool_names_set)
         tool_lines = "\n".join(f"- {t.name}: {t.description}" for t in available_tools if t.name in allowed)
         user_prompt = f"Task:\n{task}\n\n"
+        if session_context:
+            user_prompt += (
+                "Compressed memory from earlier turns in this client session (same workspace):\n"
+                f"{session_context}\n\n"
+            )
         if prior_context:
             user_prompt += (
                 "Prior execution log (revise the plan; avoid repeating steps that already failed the same way):\n"
@@ -112,7 +122,11 @@ class PydanticAIPlanner(Planner):
         normalized = self._normalize_plan(result.output, allowed, selected_skills)
         if not normalized:
             return self._fallback.create_plan(
-                task, selected_skills, available_tools, prior_context=prior_context
+                task,
+                selected_skills,
+                available_tools,
+                prior_context=prior_context,
+                session_context=session_context,
             )
         return normalized
 

@@ -13,6 +13,7 @@ class Planner:
         available_tools: list[ToolSpec],
         *,
         prior_context: str | None = None,
+        session_context: str | None = None,
     ) -> list[PlanStep]:
         raise NotImplementedError
 
@@ -38,10 +39,15 @@ class HeuristicPlanner(Planner):
         available_tools: list[ToolSpec],
         *,
         prior_context: str | None = None,
+        session_context: str | None = None,
     ) -> list[PlanStep]:
-        effective_task = (
-            f"{task}\n\n--- Prior execution log ---\n{prior_context}" if prior_context else task
-        )
+        effective_task = task
+        if session_context:
+            effective_task = (
+                f"{effective_task}\n\n--- Client session memory (compressed prior turns) ---\n{session_context}"
+            )
+        if prior_context:
+            effective_task = f"{effective_task}\n\n--- Prior execution log (this run) ---\n{prior_context}"
         tool_names = {tool.name for tool in available_tools}
         allowed_tools = self._resolve_allowed_tools(selected_skills, tool_names)
         selected_skill = selected_skills[0].name if selected_skills else None

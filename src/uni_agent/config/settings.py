@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     workspace: Path = Field(default_factory=lambda: Path(".").resolve())
     skills_dir: Path = Field(default_factory=lambda: Path("skills").resolve())
     task_log_dir: Path = Field(default_factory=lambda: Path(".uni-agent/runs").resolve())
+    session_dir: Path = Field(default_factory=lambda: Path(".uni-agent/sessions").resolve())
     log_level: str = "INFO"
     sandbox_allowed_commands: str = Field(default=DEFAULT_SANDBOX_ALLOWED_COMMANDS)
     sandbox_prompt_for_disallowed: bool = Field(

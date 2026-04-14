@@ -34,6 +34,7 @@ class FailThenSucceedPlanner(Planner):
         available_tools: list[ToolSpec],
         *,
         prior_context: str | None = None,
+        session_context: str | None = None,
     ) -> list[PlanStep]:
         self.calls += 1
         if self.calls < 3:
@@ -77,6 +78,7 @@ class AlwaysFailPlanner(Planner):
         available_tools: list[ToolSpec],
         *,
         prior_context: str | None = None,
+        session_context: str | None = None,
     ) -> list[PlanStep]:
         return [
             PlanStep(

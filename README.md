@@ -1,79 +1,55 @@
 # uni-agent
 
-一个可加载可插拔 Skills 的通用 Agent Client。
+可加载可插拔 **Skills** 的通用 **Agent Client**（Python CLI）。
 
-项目核心由三部分组成：
+核心组成：
 
-- Agent Runtime
-- 通用 Sandbox
-- Skills 插件机制
+- **Agent Runtime**：`Orchestrator` + `Planner`（启发式 / PydanticAI）+ `Executor`
+- **通用 Sandbox**：`LocalSandbox`（命令白名单、超时、可选交互批准）
+- **Skills**：本地 `skills/` 目录加载与匹配
 
-当前仓库处于设计阶段，已完成首版客户端文档：
+详细设计见：
 
-- [设计文档](/Users/a1021500406/private/uni-agent/docs/设计文档.md)
-- [开发文档](/Users/a1021500406/private/uni-agent/docs/开发文档.md)
-- [进度文档](/Users/a1021500406/private/uni-agent/docs/进度文档.md)
+- [设计文档](docs/设计文档.md)
+- [开发文档](docs/开发文档.md)
+- [进度文档](docs/进度文档.md)
 
-并已初始化第一版 Python 工程骨架：
+## 能力摘要（当前实现）
 
-- `typer` CLI
-- `pydantic` 配置和模型
-- `SkillLoader`
-- `ToolRegistry`
-- 本地 `LocalSandbox` 雏形
+- `agent run "<任务>"`：自动规划并执行工具；支持 `--plan` 静态计划文件
+- **多轮重规划**：失败后带执行日志再规划（`UNI_AGENT_ORCHESTRATOR_MAX_FAILED_ROUNDS`）
+- **内置工具**：`shell_exec`、`file_read`、`file_write`、`http_fetch`、`search_workspace`（ripgrep 固定字符串；无匹配不视为失败）
+- **OpenAI 兼容 API**：`UNI_AGENT_OPENAI_BASE_URL` / `UNI_AGENT_OPENAI_API_KEY`；适配 Qwen 等网关的 `tool_choice` 行为
+- **交互客户端**：`agent client` 进入 REPL（默认按时间新建 session，落盘在 `UNI_AGENT_SESSION_DIR`）；每轮任务结束后追加写入 session；支持 `load <id>`、`sessions`、`new`；进度用人类可读格式打在 stderr
+- **流式过程**：默认 `agent run ... --stream` 在 **stderr** 输出 NDJSON 事件；`--no-stream` 关闭；**stdout** 仍为最终完整 JSON
+- **运行结论**：结果中含 `conclusion` 字段（规则摘要 + 可选 LLM）
+- **任务落盘**：`.uni-agent/runs/`（已 `.gitignore`，不提交）
 
 ## 开发约束
 
-后续开发必须遵循以下文档：
-
-- [设计文档](/Users/a1021500406/private/uni-agent/docs/设计文档.md)
-- [开发文档](/Users/a1021500406/private/uni-agent/docs/开发文档.md)
-- [进度文档](/Users/a1021500406/private/uni-agent/docs/进度文档.md)
-
-其中：
-
-- 设计文档定义项目边界和架构原则
-- 开发文档定义技术栈、模块拆解、实现步骤和测试项
-- 进度文档定义开发计划、每轮进展和下一轮 TODO
-
-如果实现与文档不一致，应先更新文档，再继续开发。
-
-## 开发流程
-
-每次开始新一轮开发前，必须先执行以下流程：
-
-1. 先阅读 [设计文档](/Users/a1021500406/private/uni-agent/docs/设计文档.md)、[开发文档](/Users/a1021500406/private/uni-agent/docs/开发文档.md) 和 [进度文档](/Users/a1021500406/private/uni-agent/docs/进度文档.md)
-2. 从 `main` 拉取最新代码，并为本轮开发创建新的功能分支，禁止直接在 `main` 上开发
-3. 基于当前文档制定本轮开发计划
-4. 在功能分支上按计划实现本轮开发功能
-5. 为新增或变更能力补充单元测试或集成测试
-6. 执行相关测试并确认结果
-7. 在用户确认后，再把本轮进度同步更新到 [进度文档](/Users/a1021500406/private/uni-agent/docs/进度文档.md)
-8. 本轮开发结束后，将功能分支合并回 `main`，确保主干始终反映已确认完成的进展
-
-## 当前定位
-
-这不是平台项目，而是一个 Client：
-
-- 通过 CLI 或本地接口接收任务
-- 通过加载 Skills 获得不同场景能力
-- 通过工具系统和沙盒执行实际动作
-
-## 建议下一步
-
-1. 接入真实 `PydanticAI` planner
-2. 把 `ToolRegistry` 接到真实执行器
-3. 补 `agent replay` 和任务日志存储
-4. 增加更多 Skills 和冲突处理策略
-5. 演进到 Docker 沙盒
+实现与文档不一致时，**先改文档再改代码**。协作流程见 [进度文档](docs/进度文档.md) 中的记录规范。
 
 ## 本地运行
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip install -e '.[dev]'
+
 agent skills
-agent run "summarize the workspace"
+agent run "read README.md"
+# 仅看最终 JSON、不要 stderr 流式事件：
+# agent run "read README.md" --no-stream
+
 pytest
 ```
+
+配置示例见仓库根目录 `.env.example`。
+
+## 测试
+
+```bash
+python -m pytest -q
+```
+
+（当前仓库约 **51** 个用例，以 `pytest` 输出为准。）
