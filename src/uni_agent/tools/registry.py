@@ -19,7 +19,11 @@ class ToolRegistry:
         for tool in (
             ToolSpec(
                 name="shell_exec",
-                description="Execute an allowlisted shell command in the sandbox.",
+                description=(
+                    "Run one program via argv only (JSON list of strings); "
+                    "no shell, pipes, or operators — the first string is the executable name. "
+                    "Binaries not on the sandbox allowlist may require interactive approval (CLI)."
+                ),
                 risk_level="high",
             ),
             ToolSpec(
@@ -40,6 +44,7 @@ class ToolRegistry:
                 name="search_workspace",
                 description=(
                     "Search file contents: `query` is a literal substring (ripgrep fixed-string, not regex). "
+                    "Whitespace is normalized to single spaces (do not paste multi-line logs into `query`). "
                     "Queries `*`, `**`, `.*`, or whitespace-only list files in the workspace."
                 ),
             ),

@@ -8,7 +8,10 @@ from pydantic_ai.settings import ModelSettings
 
 from uni_agent.agent.llm import LLMProvider, build_planner_model
 from uni_agent.agent.planner import HeuristicPlanner, Planner
+from uni_agent.config.settings import parse_sandbox_allowed_commands
 from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
+
+_DEFAULT_ALLOWED_SHELL = frozenset(parse_sandbox_allowed_commands("pwd,ls,cat,echo,rg"))
 
 
 class LLMPlanStep(BaseModel):
@@ -28,8 +31,17 @@ _DEFAULT_PLANNER_INSTRUCTIONS = (
     "Prefer file_read for reading files, search_workspace to locate code, "
     "file_write only when the user explicitly needs new or updated file content, "
     "http_fetch only for clear http(s) retrieval needs, "
-    "and shell_exec only for trivial inspection (pwd, ls) using "
-    '{"command": ["ls"]} or {"command": ["pwd"]} style arguments.'
+    "and shell_exec only when needed. "
+    "For 'largest folder', 'disk usage', or similar, use shell_exec with du as argv "
+    '(e.g. {"command": ["du", "-h", "-d", "1", "."]} from workspace root; '
+    "never combine -sh with -d on macOS/BSD). "
+    "Do not use search_workspace on the question text for this. "
+    "For shell_exec you MUST pass a JSON argv list: each element is one argument; "
+    "there is no shell — pipes, redirects, semicolons, &&/||, command substitution, "
+    "or a single string containing multiple tokens are invalid. "
+    "The first element is the program name (one token, no spaces). "
+    "Programs on the pre-approved list in the user message run immediately; "
+    "others may require interactive user approval at execution time."
 )
 
 
@@ -45,9 +57,11 @@ class PydanticAIPlanner(Planner):
         planner_instructions: str | None = None,
         model_settings: ModelSettings | None = None,
         retries: int = 1,
+        allowed_shell_commands: frozenset[str] | None = None,
     ) -> None:
         self._provider = provider
         self._fallback = fallback or HeuristicPlanner()
+        self._allowed_shell = allowed_shell_commands or _DEFAULT_ALLOWED_SHELL
         instructions = planner_instructions or _DEFAULT_PLANNER_INSTRUCTIONS
         agent_kwargs: dict = {
             "output_type": LLMStructuredPlan,
@@ -69,23 +83,37 @@ class PydanticAIPlanner(Planner):
         task: str,
         selected_skills: list[SkillSpec],
         available_tools: list[ToolSpec],
+        *,
+        prior_context: str | None = None,
     ) -> list[PlanStep]:
         if not self._provider.is_available():
-            return self._fallback.create_plan(task, selected_skills, available_tools)
+            return self._fallback.create_plan(
+                task, selected_skills, available_tools, prior_context=prior_context
+            )
 
         tool_names_set = {tool.name for tool in available_tools}
         allowed = self._resolve_allowed_tools(selected_skills, tool_names_set)
         tool_lines = "\n".join(f"- {t.name}: {t.description}" for t in available_tools if t.name in allowed)
-        user_prompt = (
-            f"Task:\n{task}\n\n"
+        user_prompt = f"Task:\n{task}\n\n"
+        if prior_context:
+            user_prompt += (
+                "Prior execution log (revise the plan; avoid repeating steps that already failed the same way):\n"
+                f"{prior_context}\n\n"
+            )
+        shell_allow = ", ".join(sorted(self._allowed_shell))
+        user_prompt += (
             f"Allowed tool names: {sorted(allowed)}\n"
             f"Tool details:\n{tool_lines}\n"
+            f"shell_exec pre-approved first argv tokens (no shell, no pipes; run without prompt): {shell_allow}\n"
+            "Other single-program argv lists are allowed in the plan but may require user approval when executed.\n"
             "Return at least one step when possible."
         )
         result = self._agent.run_sync(user_prompt)
         normalized = self._normalize_plan(result.output, allowed, selected_skills)
         if not normalized:
-            return self._fallback.create_plan(task, selected_skills, available_tools)
+            return self._fallback.create_plan(
+                task, selected_skills, available_tools, prior_context=prior_context
+            )
         return normalized
 
     def _resolve_allowed_tools(self, selected_skills: list[SkillSpec], tool_names: set[str]) -> set[str]:
@@ -126,7 +154,17 @@ class PydanticAIPlanner(Planner):
     def _arguments_valid(self, tool: str, arguments: dict[str, Any]) -> bool:
         if tool == "shell_exec":
             command = arguments.get("command")
-            return isinstance(command, list) and all(isinstance(part, str) for part in command) and bool(command)
+            if not isinstance(command, list) or not command:
+                return False
+            if not all(isinstance(part, str) for part in command):
+                return False
+            exe = command[0]
+            if any(ch.isspace() for ch in exe):
+                return False
+            for part in command:
+                if any(bad in part for bad in ("|", ";", "\n", "\r", "&&", "||", "`", "$(")):
+                    return False
+            return True
         if tool == "file_read":
             return isinstance(arguments.get("path"), str) and bool(arguments.get("path"))
         if tool == "file_write":

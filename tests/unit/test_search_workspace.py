@@ -44,3 +44,25 @@ def test_search_workspace_treats_regex_specials_as_literal_with_fixed_strings(tm
     output = registry.execute("search_workspace", {"query": "a*b"})
 
     assert "x.txt" in output
+
+
+def test_search_workspace_no_matches_returns_empty(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "a.txt").write_text("hello", encoding="utf-8")
+    registry = _registry(workspace)
+
+    output = registry.execute("search_workspace", {"query": "ZZZ_NO_MATCH_ZZZ"})
+
+    assert output == ""
+
+
+def test_search_workspace_normalizes_newlines_in_query(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "a.txt").write_text("hello world line", encoding="utf-8")
+    registry = _registry(workspace)
+
+    output = registry.execute("search_workspace", {"query": "hello\n\nworld line"})
+
+    assert "a.txt" in output

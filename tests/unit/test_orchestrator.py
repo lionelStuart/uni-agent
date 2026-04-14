@@ -30,6 +30,8 @@ def test_orchestrator_reads_a_file_and_persists_run(tmp_path: Path) -> None:
     assert result.run_id
     assert any(step.tool == "file_read" for step in result.plan)
     assert "# uni-agent" in result.output
+    assert result.conclusion
+    assert "执行" in result.conclusion or "步骤" in result.conclusion
     assert (tmp_path / "runs" / f"{result.run_id}.json").exists()
 
 
@@ -41,3 +43,4 @@ def test_orchestrator_can_replay_previous_run(tmp_path: Path) -> None:
 
     assert replayed.run_id == result.run_id
     assert replayed.output == result.output
+    assert replayed.conclusion == result.conclusion

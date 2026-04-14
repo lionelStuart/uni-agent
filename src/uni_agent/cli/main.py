@@ -8,21 +8,29 @@ import typer
 from uni_agent.agent.llm import EnvLLMProvider
 from uni_agent.agent.plan_loader import load_plan_file
 from uni_agent.agent.orchestrator import Orchestrator
+from uni_agent.agent.run_conclusion import RunConclusionSynthesizer
 from uni_agent.agent.planner import HeuristicPlanner
 from uni_agent.agent.pydantic_planner import PydanticAIPlanner
 from uni_agent.config.settings import (
+    Settings,
     get_settings,
     parse_http_fetch_allowed_hosts,
     parse_sandbox_allowed_commands,
 )
 from uni_agent.observability.logging import configure_logging
 from uni_agent.observability.task_store import TaskStore
-from uni_agent.sandbox.runner import LocalSandbox
+from uni_agent.sandbox.runner import LocalSandbox, prompt_tty_approve_disallowed_command
 from uni_agent.skills.loader import SkillLoader
 from uni_agent.tools.builtins import register_builtin_handlers
 from uni_agent.tools.registry import ToolRegistry
 
 app = typer.Typer(help="uni-agent CLI")
+
+
+def _sandbox_approval_callback(settings: Settings):
+    if not settings.sandbox_prompt_for_disallowed:
+        return None
+    return prompt_tty_approve_disallowed_command
 
 
 def build_orchestrator() -> Orchestrator:
@@ -35,6 +43,7 @@ def build_orchestrator() -> Orchestrator:
         settings.workspace,
         allowed_commands=allowed_commands,
         command_timeout=settings.sandbox_command_timeout_seconds,
+        approve_non_allowlisted=_sandbox_approval_callback(settings),
     )
     register_builtin_handlers(
         tool_registry,
@@ -56,6 +65,7 @@ def build_orchestrator() -> Orchestrator:
     if settings.llm_temperature is not None:
         model_settings = {"temperature": settings.llm_temperature}
 
+    allowed_shell = frozenset(allowed_commands)
     if settings.planner_backend == "heuristic":
         planner = heuristic
     elif settings.planner_backend == "pydantic_ai":
@@ -65,6 +75,7 @@ def build_orchestrator() -> Orchestrator:
             planner_instructions=settings.planner_instructions,
             model_settings=model_settings,
             retries=settings.llm_retries,
+            allowed_shell_commands=allowed_shell,
         )
     else:
         planner = (
@@ -74,17 +85,27 @@ def build_orchestrator() -> Orchestrator:
                 planner_instructions=settings.planner_instructions,
                 model_settings=model_settings,
                 retries=settings.llm_retries,
+                allowed_shell_commands=allowed_shell,
             )
             if provider.is_available()
             else heuristic
         )
     task_store = TaskStore(settings.task_log_dir)
+    conclusion_syn: RunConclusionSynthesizer | None = None
+    if settings.run_conclusion_llm and provider.is_available():
+        conclusion_syn = RunConclusionSynthesizer(
+            provider=provider,
+            model_settings=model_settings,
+            retries=0,
+        )
     return Orchestrator(
         skill_loader=skill_loader,
         tool_registry=tool_registry,
         planner=planner,
         task_store=task_store,
         max_step_retries=settings.tool_step_retries,
+        max_failed_rounds=settings.orchestrator_max_failed_rounds,
+        conclusion_synthesizer=conclusion_syn,
     )
 
 

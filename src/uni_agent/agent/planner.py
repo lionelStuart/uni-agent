@@ -11,6 +11,8 @@ class Planner:
         task: str,
         selected_skills: list[SkillSpec],
         available_tools: list[ToolSpec],
+        *,
+        prior_context: str | None = None,
     ) -> list[PlanStep]:
         raise NotImplementedError
 
@@ -34,14 +36,19 @@ class HeuristicPlanner(Planner):
         task: str,
         selected_skills: list[SkillSpec],
         available_tools: list[ToolSpec],
+        *,
+        prior_context: str | None = None,
     ) -> list[PlanStep]:
+        effective_task = (
+            f"{task}\n\n--- Prior execution log ---\n{prior_context}" if prior_context else task
+        )
         tool_names = {tool.name for tool in available_tools}
         allowed_tools = self._resolve_allowed_tools(selected_skills, tool_names)
         selected_skill = selected_skills[0].name if selected_skills else None
 
         steps: list[PlanStep] = []
-        write_spec = self._extract_file_write(task)
-        fetch_url = self._extract_fetch_url(task) if self._needs_http_fetch(task) else None
+        write_spec = self._extract_file_write(effective_task)
+        fetch_url = self._extract_fetch_url(effective_task) if self._needs_http_fetch(effective_task) else None
 
         if fetch_url and "http_fetch" in allowed_tools:
             steps.append(
@@ -66,7 +73,7 @@ class HeuristicPlanner(Planner):
                 )
             )
 
-        path = self._extract_path(task)
+        path = self._extract_path(effective_task)
         if path and "file_read" in allowed_tools:
             if not (write_spec and write_spec[0] == path):
                 steps.append(
@@ -79,25 +86,40 @@ class HeuristicPlanner(Planner):
                     )
                 )
 
-        if self._needs_workspace_search(task) and "search_workspace" in allowed_tools:
+        if self._needs_disk_usage_summary(effective_task) and "shell_exec" in allowed_tools:
+            steps.append(
+                PlanStep(
+                    id=f"step-{len(steps) + 1}",
+                    description=(
+                        "Compare sizes of immediate subdirectories under the workspace root "
+                        "(du one level deep; pick the largest line)."
+                    ),
+                    tool="shell_exec",
+                    skill=selected_skill,
+                    # BSD/macOS du rejects -s together with -d; -h -d 1 is portable (GNU + BSD).
+                    arguments={"command": ["du", "-h", "-d", "1", "."]},
+                )
+            )
+
+        if self._needs_workspace_search(effective_task) and "search_workspace" in allowed_tools:
             steps.append(
                 PlanStep(
                     id=f"step-{len(steps) + 1}",
                     description="Search the workspace for relevant files or matches.",
                     tool="search_workspace",
                     skill=selected_skill,
-                    arguments={"query": self._build_search_query(task, path)},
+                    arguments={"query": self._build_search_query(effective_task, path)},
                 )
             )
 
-        if self._needs_shell_command(task) and "shell_exec" in allowed_tools:
+        if self._needs_shell_command(effective_task) and "shell_exec" in allowed_tools:
             steps.append(
                 PlanStep(
                     id=f"step-{len(steps) + 1}",
                     description="Inspect the workspace with a safe shell command.",
                     tool="shell_exec",
                     skill=selected_skill,
-                    arguments={"command": self._default_shell_command(task)},
+                    arguments={"command": self._default_shell_command(effective_task)},
                 )
             )
 
@@ -109,7 +131,7 @@ class HeuristicPlanner(Planner):
                         description="Search the workspace using the full task as context.",
                         tool="search_workspace",
                         skill=selected_skill,
-                        arguments={"query": self._build_search_query(task, path)},
+                        arguments={"query": self._build_search_query(effective_task, path)},
                     )
                 )
             elif "shell_exec" in allowed_tools:
@@ -160,10 +182,32 @@ class HeuristicPlanner(Planner):
             return None
         return match.group("path")
 
+    def _needs_disk_usage_summary(self, task: str) -> bool:
+        """Largest folder / disk usage style questions need ``du``, not a text search of the task string."""
+        task_l = task.lower()
+        cn_dir = any(m in task for m in ("文件夹", "目录", "子目录"))
+        cn_size = any(m in task for m in ("最大", "哪个大", "磁盘", "空间", "占用"))
+        en = any(
+            phrase in task_l
+            for phrase in (
+                "largest folder",
+                "largest directory",
+                "biggest folder",
+                "disk usage",
+                "folder size",
+                "directory size",
+            )
+        )
+        return (cn_dir and cn_size) or en or "du " in task_l
+
     def _needs_workspace_search(self, task: str) -> bool:
-        markers = ("search", "find", "look for", "grep", "where", "查看", "查找", "搜索", "进度")
+        if self._needs_disk_usage_summary(task):
+            return False
+        markers = ("search", "find", "look for", "grep", "where", "查看", "查找", "搜索", "进度", "找到")
         task_lower = task.lower()
-        return any(marker in task_lower for marker in markers) or any(marker in task for marker in ("查看", "查找", "搜索", "进度"))
+        return any(marker in task_lower for marker in markers) or any(
+            marker in task for marker in ("查看", "查找", "搜索", "进度", "找到")
+        )
 
     def _needs_shell_command(self, task: str) -> bool:
         markers = ("pwd", "ls", "list", "目录", "文件列表")

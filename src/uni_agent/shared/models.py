@@ -54,6 +54,8 @@ class TaskResult(BaseModel):
     plan: list[PlanStep] = Field(default_factory=list)
     output: str = ""
     error: str | None = None
+    orchestrator_failed_rounds: int = 0
+    conclusion: str | None = None
 
 
 class TaskRunRecord(BaseModel):

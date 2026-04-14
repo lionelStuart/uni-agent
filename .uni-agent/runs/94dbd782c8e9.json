@@ -1,0 +1,48 @@
+{
+  "run_id": "94dbd782c8e9",
+  "task": "找到当前最大文件夹",
+  "status": "failed",
+  "result": {
+    "run_id": "94dbd782c8e9",
+    "task": "找到当前最大文件夹",
+    "status": "failed",
+    "selected_skills": [],
+    "available_tools": [
+      "shell_exec",
+      "file_read",
+      "file_write",
+      "http_fetch",
+      "search_workspace"
+    ],
+    "plan": [
+      {
+        "id": "step-1",
+        "description": "使用du命令查看当前目录下各文件夹的大小并排序",
+        "tool": "shell_exec",
+        "skill": null,
+        "arguments": {
+          "command": [
+            "du",
+            "-sh",
+            "*",
+            "--max-depth=1",
+            "2>/dev/null",
+            "|",
+            "sort",
+            "-hr",
+            "|",
+            "head",
+            "-20"
+          ]
+        },
+        "status": "failed",
+        "output": "Command 'du' is not allowed in the local sandbox.",
+        "error_type": "SandboxError",
+        "error_detail": "Command 'du' is not allowed in the local sandbox.",
+        "failure_code": "sandbox_error"
+      }
+    ],
+    "output": "Command 'du' is not allowed in the local sandbox.",
+    "error": "Command 'du' is not allowed in the local sandbox."
+  }
+}

@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     task_log_dir: Path = Field(default_factory=lambda: Path(".uni-agent/runs").resolve())
     log_level: str = "INFO"
     sandbox_allowed_commands: str = "pwd,ls,cat,echo,rg"
+    sandbox_prompt_for_disallowed: bool = Field(
+        default=True,
+        description="If true, non-allowlisted sandbox commands can be approved interactively (TTY only).",
+    )
     sandbox_command_timeout_seconds: int = 30
     http_fetch_max_bytes: int = 500_000
     http_fetch_allow_private_networks: bool = False
@@ -39,6 +43,11 @@ class Settings(BaseSettings):
     planner_instructions: str | None = None
     llm_temperature: float | None = None
     llm_retries: int = 1
+    orchestrator_max_failed_rounds: int = 5
+    run_conclusion_llm: bool = Field(
+        default=True,
+        description="If true and an LLM is configured, synthesize a final natural-language conclusion after the run.",
+    )
 
 
 def get_settings() -> Settings:

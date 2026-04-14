@@ -12,6 +12,8 @@ from uni_agent.tools.http_fetch_policy import (
     strip_url_fragment,
 )
 
+_RG_OK_NO_MATCH = frozenset({0, 1})
+
 
 def register_builtin_handlers(
     tool_registry,
@@ -80,13 +82,21 @@ def register_builtin_handlers(
         query = arguments.get("query")
         if not isinstance(query, str):
             raise ValueError("search_workspace requires a 'query' string.")
-        stripped = query.strip()
+        # Collapse whitespace/newlines so pasted prior-context blobs do not break ripgrep's pattern.
+        needle = " ".join(query.strip().split())
         # ``*`` / ``.*`` are invalid or misleading as ripgrep regex; treat as "list files in workspace".
-        broad = not stripped or stripped in ("*", "**", ".*")
+        broad = not needle or needle in ("*", "**", ".*")
         if broad:
-            return sandbox.run(["rg", "--files", str(resolved_workspace)])
+            # ripgrep uses exit 1 for "no matches"; treat as success for listing/search UX.
+            return sandbox.run(
+                ["rg", "--files", str(resolved_workspace)],
+                accept_exit_codes=_RG_OK_NO_MATCH,
+            )
         # Fixed-string search avoids regex footguns from LLM output (e.g. bare ``*``).
-        return sandbox.run(["rg", "-n", "-F", "--", stripped, str(resolved_workspace)])
+        return sandbox.run(
+            ["rg", "-n", "-F", "--", needle, str(resolved_workspace)],
+            accept_exit_codes=_RG_OK_NO_MATCH,
+        )
 
     tool_registry.attach_handler("shell_exec", shell_exec)
     tool_registry.attach_handler("file_read", file_read)

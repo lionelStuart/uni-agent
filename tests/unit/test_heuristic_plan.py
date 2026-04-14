@@ -36,3 +36,16 @@ def test_heuristic_adds_http_fetch_for_urls() -> None:
     fetch_steps = [step for step in plan if step.tool == "http_fetch"]
     assert fetch_steps
     assert fetch_steps[0].arguments["url"].startswith("https://example.com/path")
+
+
+def test_heuristic_prefers_du_for_largest_folder_question() -> None:
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    planner = HeuristicPlanner()
+
+    plan = planner.create_plan("找到当前最大文件夹", [], registry.list_tools())
+
+    shell = [step for step in plan if step.tool == "shell_exec"]
+    assert shell
+    assert shell[0].arguments["command"] == ["du", "-h", "-d", "1", "."]
+    assert all(step.tool != "search_workspace" for step in plan)
