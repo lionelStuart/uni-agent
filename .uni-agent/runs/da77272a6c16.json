@@ -1,0 +1,36 @@
+{
+  "run_id": "da77272a6c16",
+  "task": "你的任务描述",
+  "status": "failed",
+  "result": {
+    "run_id": "da77272a6c16",
+    "task": "你的任务描述",
+    "status": "failed",
+    "selected_skills": [],
+    "available_tools": [
+      "shell_exec",
+      "file_read",
+      "file_write",
+      "http_fetch",
+      "search_workspace"
+    ],
+    "plan": [
+      {
+        "id": "step-1",
+        "description": "探索工作区以了解当前项目结构和可用文件",
+        "tool": "search_workspace",
+        "skill": null,
+        "arguments": {
+          "query": "*"
+        },
+        "status": "failed",
+        "output": "rg: regex parse error:\n    (?:*)\n       ^\nerror: repetition operator missing expression",
+        "error_type": "SandboxError",
+        "error_detail": "rg: regex parse error:\n    (?:*)\n       ^\nerror: repetition operator missing expression",
+        "failure_code": "sandbox_error"
+      }
+    ],
+    "output": "rg: regex parse error:\n    (?:*)\n       ^\nerror: repetition operator missing expression",
+    "error": "rg: regex parse error:\n    (?:*)\n       ^\nerror: repetition operator missing expression"
+  }
+}

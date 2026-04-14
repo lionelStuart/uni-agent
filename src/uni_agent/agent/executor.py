@@ -1,36 +1,56 @@
 from __future__ import annotations
 
+from uni_agent.sandbox.runner import SandboxError
 from uni_agent.shared.models import PlanStep, TaskStatus
 from uni_agent.tools.registry import ToolRegistry
 
 
 class Executor:
-    def __init__(self, tool_registry: ToolRegistry):
+    def __init__(self, tool_registry: ToolRegistry, max_step_retries: int = 0):
         self.tool_registry = tool_registry
+        self.max_step_retries = max(0, max_step_retries)
 
     def execute(self, plan: list[PlanStep]) -> list[PlanStep]:
         executed_steps: list[PlanStep] = []
         for step in plan:
-            running_step = step.model_copy(update={"status": TaskStatus.RUNNING})
-            try:
-                result = self.tool_registry.execute(running_step.tool, running_step.arguments)
-            except Exception as exc:
-                executed_steps.append(
-                    running_step.model_copy(
+            for attempt in range(self.max_step_retries + 1):
+                running_step = step.model_copy(update={"status": TaskStatus.RUNNING})
+                try:
+                    result = self.tool_registry.execute(running_step.tool, running_step.arguments)
+                except Exception as exc:
+                    failure_code = _classify_failure(exc)
+                    failed_step = running_step.model_copy(
                         update={
                             "status": TaskStatus.FAILED,
                             "output": str(exc),
+                            "error_type": type(exc).__name__,
+                            "error_detail": str(exc),
+                            "failure_code": failure_code,
+                        }
+                    )
+                    if attempt >= self.max_step_retries:
+                        executed_steps.append(failed_step)
+                        return executed_steps
+                    continue
+
+                executed_steps.append(
+                    running_step.model_copy(
+                        update={
+                            "status": TaskStatus.COMPLETED,
+                            "output": result,
                         }
                     )
                 )
                 break
 
-            executed_steps.append(
-                running_step.model_copy(
-                    update={
-                        "status": TaskStatus.COMPLETED,
-                        "output": result,
-                    }
-                )
-            )
         return executed_steps
+
+
+def _classify_failure(exc: BaseException) -> str:
+    if isinstance(exc, SandboxError):
+        return "sandbox_error"
+    if isinstance(exc, KeyError):
+        return "unknown_tool"
+    if isinstance(exc, ValueError):
+        return "invalid_arguments"
+    return "tool_execution_error"

@@ -15,7 +15,7 @@ dependencies = [
   "PyYAML>=6.0,<7",
   "structlog>=24.1,<25",
   "typer>=0.12,<1",
-  "pydantic-ai>=0.0.24",
+  "pydantic-ai>=0.0.24,<2",
 ]
 
 [project.optional-dependencies]

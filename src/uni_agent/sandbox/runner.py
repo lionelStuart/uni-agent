@@ -14,12 +14,14 @@ class LocalSandbox:
         workspace: Path,
         allowed_commands: set[str] | None = None,
         max_output_chars: int = 4000,
+        command_timeout: int = 30,
     ):
         self.workspace = workspace.resolve()
-        self.allowed_commands = allowed_commands or {"pwd", "ls", "cat", "echo", "python", "python3", "rg"}
+        self.allowed_commands = allowed_commands or {"pwd", "ls", "cat", "echo", "rg"}
         self.max_output_chars = max_output_chars
+        self.command_timeout = command_timeout
 
-    def run(self, command: list[str], timeout: int = 30) -> str:
+    def run(self, command: list[str], timeout: int | None = None) -> str:
         if not command:
             raise SandboxError("Empty command is not allowed.")
 
@@ -27,12 +29,13 @@ class LocalSandbox:
         if binary not in self.allowed_commands:
             raise SandboxError(f"Command '{binary}' is not allowed in the local sandbox.")
 
+        effective_timeout = self.command_timeout if timeout is None else timeout
         completed = subprocess.run(
             command,
             cwd=self.workspace,
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=effective_timeout,
             check=False,
         )
         output = completed.stdout.strip()

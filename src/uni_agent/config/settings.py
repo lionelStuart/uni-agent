@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import Field
@@ -9,16 +10,44 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 
+PlannerBackend = Literal["auto", "heuristic", "pydantic_ai"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="UNI_AGENT_", extra="ignore")
 
     model_name: str = Field(default="openai:gpt-4.1-mini")
+    openai_base_url: str | None = Field(
+        default=None,
+        description="OpenAI-compatible API base URL (e.g. https://host/v1). Maps to UNI_AGENT_OPENAI_BASE_URL.",
+    )
+    openai_api_key: str | None = Field(
+        default=None,
+        description="Optional API key override for OpenAI-compatible providers. Maps to UNI_AGENT_OPENAI_API_KEY.",
+    )
+    planner_backend: PlannerBackend = "auto"
     workspace: Path = Field(default_factory=lambda: Path(".").resolve())
     skills_dir: Path = Field(default_factory=lambda: Path("skills").resolve())
     task_log_dir: Path = Field(default_factory=lambda: Path(".uni-agent/runs").resolve())
     log_level: str = "INFO"
+    sandbox_allowed_commands: str = "pwd,ls,cat,echo,rg"
+    sandbox_command_timeout_seconds: int = 30
+    http_fetch_max_bytes: int = 500_000
+    http_fetch_allow_private_networks: bool = False
+    http_fetch_allowed_hosts: str = ""
+    tool_step_retries: int = 0
+    planner_instructions: str | None = None
+    llm_temperature: float | None = None
+    llm_retries: int = 1
 
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def parse_sandbox_allowed_commands(raw: str) -> set[str]:
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def parse_http_fetch_allowed_hosts(raw: str) -> frozenset[str]:
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())

@@ -38,7 +38,10 @@ class ToolRegistry:
             ),
             ToolSpec(
                 name="search_workspace",
-                description="Search files inside the workspace.",
+                description=(
+                    "Search file contents: `query` is a literal substring (ripgrep fixed-string, not regex). "
+                    "Queries `*`, `**`, `.*`, or whitespace-only list files in the workspace."
+                ),
             ),
         ):
             self.register(tool)

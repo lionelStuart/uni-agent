@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import typer
 
-from uni_agent.agent.planner import HeuristicPlanner
+from uni_agent.agent.llm import EnvLLMProvider
+from uni_agent.agent.plan_loader import load_plan_file
 from uni_agent.agent.orchestrator import Orchestrator
-from uni_agent.config.settings import get_settings
+from uni_agent.agent.planner import HeuristicPlanner
+from uni_agent.agent.pydantic_planner import PydanticAIPlanner
+from uni_agent.config.settings import (
+    get_settings,
+    parse_http_fetch_allowed_hosts,
+    parse_sandbox_allowed_commands,
+)
 from uni_agent.observability.logging import configure_logging
 from uni_agent.observability.task_store import TaskStore
 from uni_agent.sandbox.runner import LocalSandbox
@@ -22,16 +30,61 @@ def build_orchestrator() -> Orchestrator:
     configure_logging(settings.log_level)
     tool_registry = ToolRegistry()
     tool_registry.register_builtin_tools()
-    sandbox = LocalSandbox(settings.workspace)
-    register_builtin_handlers(tool_registry, settings.workspace, sandbox)
+    allowed_commands = parse_sandbox_allowed_commands(settings.sandbox_allowed_commands)
+    sandbox = LocalSandbox(
+        settings.workspace,
+        allowed_commands=allowed_commands,
+        command_timeout=settings.sandbox_command_timeout_seconds,
+    )
+    register_builtin_handlers(
+        tool_registry,
+        settings.workspace,
+        sandbox,
+        http_fetch_max_bytes=settings.http_fetch_max_bytes,
+        http_fetch_allow_private_networks=settings.http_fetch_allow_private_networks,
+        http_fetch_allowed_hosts=parse_http_fetch_allowed_hosts(settings.http_fetch_allowed_hosts),
+        http_fetch_timeout_seconds=settings.sandbox_command_timeout_seconds,
+    )
     skill_loader = SkillLoader(settings.skills_dir)
-    planner = HeuristicPlanner()
+    heuristic = HeuristicPlanner()
+    provider = EnvLLMProvider(
+        settings.model_name,
+        openai_base_url=settings.openai_base_url,
+        openai_api_key=settings.openai_api_key,
+    )
+    model_settings = None
+    if settings.llm_temperature is not None:
+        model_settings = {"temperature": settings.llm_temperature}
+
+    if settings.planner_backend == "heuristic":
+        planner = heuristic
+    elif settings.planner_backend == "pydantic_ai":
+        planner = PydanticAIPlanner(
+            provider=provider,
+            fallback=heuristic,
+            planner_instructions=settings.planner_instructions,
+            model_settings=model_settings,
+            retries=settings.llm_retries,
+        )
+    else:
+        planner = (
+            PydanticAIPlanner(
+                provider=provider,
+                fallback=heuristic,
+                planner_instructions=settings.planner_instructions,
+                model_settings=model_settings,
+                retries=settings.llm_retries,
+            )
+            if provider.is_available()
+            else heuristic
+        )
     task_store = TaskStore(settings.task_log_dir)
     return Orchestrator(
         skill_loader=skill_loader,
         tool_registry=tool_registry,
         planner=planner,
         task_store=task_store,
+        max_step_retries=settings.tool_step_retries,
     )
 
 
@@ -45,16 +98,73 @@ def list_skills() -> None:
 
 
 @app.command("run")
-def run_task(task: str) -> None:
+def run_task(
+    task: str,
+    plan: Path | None = typer.Option(
+        None,
+        "--plan",
+        help="Execute a static YAML/JSON plan (skips automatic planning).",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+    ),
+) -> None:
     orchestrator = build_orchestrator()
-    result = orchestrator.run(task)
+    plan_override = load_plan_file(plan) if plan is not None else None
+    result = orchestrator.run(task, plan_override=plan_override)
     typer.echo(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
 
 
 @app.command("replay")
-def replay_task(run_id: str) -> None:
+def replay_task(
+    run_id: str,
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Print each stored plan step."),
+    output_format: str = typer.Option(
+        "full",
+        "--format",
+        "-f",
+        help="Output shape: full (JSON), steps (human steps only), jsonl (NDJSON lines).",
+    ),
+) -> None:
+    if output_format not in {"full", "steps", "jsonl"}:
+        raise typer.BadParameter("format must be one of: full, steps, jsonl")
+
     orchestrator = build_orchestrator()
     result = orchestrator.replay(run_id)
+
+    if output_format == "steps":
+        for step in result.plan:
+            typer.echo(
+                f"{step.id}\t{step.tool}\t{step.status.value}\t"
+                f"{step.error_type or ''}\t{step.error_detail or ''}"
+            )
+            if step.output:
+                typer.echo(step.output)
+        return
+
+    if output_format == "jsonl":
+        for step in result.plan:
+            typer.echo(json.dumps(step.model_dump(), ensure_ascii=False))
+        summary = {
+            "type": "task_result",
+            "run_id": result.run_id,
+            "task": result.task,
+            "status": result.status.value,
+            "error": result.error,
+            "output": result.output,
+        }
+        typer.echo(json.dumps(summary, ensure_ascii=False))
+        return
+
+    if verbose:
+        for step in result.plan:
+            typer.echo(
+                f"{step.id}\t{step.tool}\t{step.status.value}\t"
+                f"{step.error_type or ''}\t{step.error_detail or ''}"
+            )
+            if step.output:
+                typer.echo(step.output)
     typer.echo(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
 
 

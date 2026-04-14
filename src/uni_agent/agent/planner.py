@@ -17,6 +17,17 @@ class Planner:
 
 class HeuristicPlanner(Planner):
     _PATH_PATTERN = re.compile(r"(?P<path>[\w./-]+\.[A-Za-z0-9]+)")
+    _URL_PATTERN = re.compile(r"(https?://[^\s\"'<>]+)", re.IGNORECASE)
+    _WRITE_PATTERNS: tuple[re.Pattern[str], ...] = (
+        re.compile(
+            r'(?i)write\s+the\s+file\s+(?P<path>[\w./-]+\.[A-Za-z0-9]+)\s+with\s+content\s+"(?P<content>[^"]*)"'
+        ),
+        re.compile(
+            r"(?i)write\s+the\s+file\s+(?P<path>[\w./-]+\.[A-Za-z0-9]+)\s+with\s+content\s+'(?P<content>[^']*)'"
+        ),
+        re.compile(r'(?i)(?:write|写入)\s+(?P<path>[\w./-]+\.[A-Za-z0-9]+)\s*[:=]\s*"(?P<content>[^"]*)"'),
+        re.compile(r"(?i)(?:write|写入)\s+(?P<path>[\w./-]+\.[A-Za-z0-9]+)\s*[:=]\s*'(?P<content>[^']*)'"),
+    )
 
     def create_plan(
         self,
@@ -29,17 +40,44 @@ class HeuristicPlanner(Planner):
         selected_skill = selected_skills[0].name if selected_skills else None
 
         steps: list[PlanStep] = []
-        path = self._extract_path(task)
-        if path and "file_read" in allowed_tools:
+        write_spec = self._extract_file_write(task)
+        fetch_url = self._extract_fetch_url(task) if self._needs_http_fetch(task) else None
+
+        if fetch_url and "http_fetch" in allowed_tools:
             steps.append(
                 PlanStep(
-                    id="step-1",
-                    description=f"Read the referenced file {path}.",
-                    tool="file_read",
+                    id=f"step-{len(steps) + 1}",
+                    description=f"Fetch remote content from {fetch_url}.",
+                    tool="http_fetch",
                     skill=selected_skill,
-                    arguments={"path": path},
+                    arguments={"url": fetch_url},
                 )
             )
+
+        if write_spec and "file_write" in allowed_tools:
+            write_path, write_content = write_spec
+            steps.append(
+                PlanStep(
+                    id=f"step-{len(steps) + 1}",
+                    description=f"Write workspace file {write_path}.",
+                    tool="file_write",
+                    skill=selected_skill,
+                    arguments={"path": write_path, "content": write_content},
+                )
+            )
+
+        path = self._extract_path(task)
+        if path and "file_read" in allowed_tools:
+            if not (write_spec and write_spec[0] == path):
+                steps.append(
+                    PlanStep(
+                        id=f"step-{len(steps) + 1}",
+                        description=f"Read the referenced file {path}.",
+                        tool="file_read",
+                        skill=selected_skill,
+                        arguments={"path": path},
+                    )
+                )
 
         if self._needs_workspace_search(task) and "search_workspace" in allowed_tools:
             steps.append(
@@ -85,6 +123,26 @@ class HeuristicPlanner(Planner):
                     )
                 )
         return steps
+
+    def _extract_file_write(self, task: str) -> tuple[str, str] | None:
+        for pattern in self._WRITE_PATTERNS:
+            match = pattern.search(task)
+            if match:
+                return match.group("path"), match.group("content")
+        return None
+
+    def _needs_http_fetch(self, task: str) -> bool:
+        if self._URL_PATTERN.search(task):
+            return True
+        markers = ("fetch", "http fetch", "下载", "curl ", "wget ")
+        task_lower = task.lower()
+        return any(marker in task_lower for marker in markers)
+
+    def _extract_fetch_url(self, task: str) -> str | None:
+        match = self._URL_PATTERN.search(task)
+        if not match:
+            return None
+        return match.group(1).rstrip(").,;]")
 
     def _resolve_allowed_tools(self, selected_skills: list[SkillSpec], tool_names: set[str]) -> set[str]:
         if not selected_skills:

@@ -40,6 +40,9 @@ class PlanStep(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     status: TaskStatus = TaskStatus.PENDING
     output: str = ""
+    error_type: str | None = None
+    error_detail: str | None = None
+    failure_code: str | None = None
 
 
 class TaskResult(BaseModel):
