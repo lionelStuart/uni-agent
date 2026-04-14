@@ -44,7 +44,18 @@ class Settings(BaseSettings):
     http_fetch_allow_private_networks: bool = False
     http_fetch_allowed_hosts: str = ""
     tool_step_retries: int = 0
-    planner_instructions: str | None = None
+    planner_instructions: str | None = Field(
+        default=None,
+        description="Override planner LLM system prompt; default is built-in DEFAULT_PLANNER_SYSTEM_PROMPT.",
+    )
+    global_system_prompt: str | None = Field(
+        default=None,
+        description="Optional prefix prepended to planner and conclusion system prompts.",
+    )
+    conclusion_system_prompt: str | None = Field(
+        default=None,
+        description="Override run-conclusion LLM system prompt; default is built-in DEFAULT_CONCLUSION_SYSTEM_PROMPT.",
+    )
     llm_temperature: float | None = None
     llm_retries: int = 1
     orchestrator_max_failed_rounds: int = 5

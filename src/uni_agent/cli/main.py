@@ -79,6 +79,7 @@ def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orche
             provider=provider,
             fallback=heuristic,
             planner_instructions=settings.planner_instructions,
+            global_system_prompt=settings.global_system_prompt,
             model_settings=model_settings,
             retries=settings.llm_retries,
             allowed_shell_commands=allowed_shell,
@@ -89,6 +90,7 @@ def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orche
                 provider=provider,
                 fallback=heuristic,
                 planner_instructions=settings.planner_instructions,
+                global_system_prompt=settings.global_system_prompt,
                 model_settings=model_settings,
                 retries=settings.llm_retries,
                 allowed_shell_commands=allowed_shell,
@@ -103,6 +105,8 @@ def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orche
             provider=provider,
             model_settings=model_settings,
             retries=0,
+            conclusion_system_prompt=settings.conclusion_system_prompt,
+            global_system_prompt=settings.global_system_prompt,
         )
     return Orchestrator(
         skill_loader=skill_loader,

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from uni_agent.agent.llm import LLMProvider, build_planner_model
+from uni_agent.agent.system_prompts import effective_conclusion_instructions
 from uni_agent.shared.models import PlanStep, TaskStatus
 
 _DIGEST_MAX_CHARS = 14_000
@@ -97,16 +98,13 @@ class RunConclusionSynthesizer:
         defer_model_check: bool = True,
         model_settings: dict[str, Any] | None = None,
         retries: int = 0,
+        conclusion_system_prompt: str | None = None,
+        global_system_prompt: str | None = None,
     ) -> None:
         self._provider = provider
-        instructions = (
-            "You write a clear execution conclusion for the user who ran a local agent. "
-            "Use the same language as the task when it is clearly Chinese or English; otherwise match the task. "
-            "Base every claim on the provided log only — do not invent files, numbers, or outcomes. "
-            "Say whether the original task goal appears achieved, summarize evidence from outputs, "
-            "and briefly explain failures or missing pieces. "
-            "If the log unambiguously answers the question (e.g. du output shows the largest child directory), "
-            "state that answer directly and do not contradict yourself (do not say the result was not identified)."
+        instructions = effective_conclusion_instructions(
+            override=conclusion_system_prompt,
+            global_prefix=global_system_prompt,
         )
         agent_kwargs: dict = {
             "output_type": _ConclusionSchema,

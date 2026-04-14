@@ -8,6 +8,7 @@ from pydantic_ai.settings import ModelSettings
 
 from uni_agent.agent.llm import LLMProvider, build_planner_model
 from uni_agent.agent.planner import HeuristicPlanner, Planner
+from uni_agent.agent.system_prompts import effective_planner_instructions
 from uni_agent.config.settings import DEFAULT_SANDBOX_ALLOWED_COMMANDS, parse_sandbox_allowed_commands
 from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
 
@@ -25,26 +26,6 @@ class LLMStructuredPlan(BaseModel):
     steps: list[LLMPlanStep] = Field(description="Ordered executable steps.")
 
 
-_DEFAULT_PLANNER_INSTRUCTIONS = (
-    "You produce a short, executable plan for a local coding agent. "
-    "Use only the tools listed in the user message. "
-    "Prefer file_read for reading files, search_workspace to locate code, "
-    "file_write only when the user explicitly needs new or updated file content, "
-    "http_fetch only for clear http(s) retrieval needs, "
-    "and shell_exec only when needed. "
-    "For 'largest folder', 'disk usage', or similar, use shell_exec with du as argv "
-    '(e.g. {"command": ["du", "-h", "-d", "1", "."]} from workspace root; '
-    "never combine -sh with -d on macOS/BSD). "
-    "Do not use search_workspace on the question text for this. "
-    "For shell_exec you MUST pass a JSON argv list: each element is one argument; "
-    "there is no shell — pipes, redirects, semicolons, &&/||, command substitution, "
-    "or a single string containing multiple tokens are invalid. "
-    "The first element is the program name (one token, no spaces). "
-    "Programs on the pre-approved list in the user message run immediately; "
-    "others may require interactive user approval at execution time."
-)
-
-
 class PydanticAIPlanner(Planner):
     """Uses PydanticAI structured output to build a plan; falls back when unavailable."""
 
@@ -55,6 +36,7 @@ class PydanticAIPlanner(Planner):
         fallback: HeuristicPlanner | None = None,
         defer_model_check: bool = True,
         planner_instructions: str | None = None,
+        global_system_prompt: str | None = None,
         model_settings: ModelSettings | None = None,
         retries: int = 1,
         allowed_shell_commands: frozenset[str] | None = None,
@@ -62,7 +44,10 @@ class PydanticAIPlanner(Planner):
         self._provider = provider
         self._fallback = fallback or HeuristicPlanner()
         self._allowed_shell = allowed_shell_commands or _DEFAULT_ALLOWED_SHELL
-        instructions = planner_instructions or _DEFAULT_PLANNER_INSTRUCTIONS
+        instructions = effective_planner_instructions(
+            override=planner_instructions,
+            global_prefix=global_system_prompt,
+        )
         agent_kwargs: dict = {
             "output_type": LLMStructuredPlan,
             "instructions": instructions,
