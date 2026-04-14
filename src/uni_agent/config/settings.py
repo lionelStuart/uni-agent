@@ -12,6 +12,9 @@ load_dotenv()
 
 PlannerBackend = Literal["auto", "heuristic", "pydantic_ai"]
 
+# Single source for CLI sandbox + planner hints (comma-separated).
+DEFAULT_SANDBOX_ALLOWED_COMMANDS = "pwd,ls,cat,echo,rg,du"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="UNI_AGENT_", extra="ignore")
@@ -30,7 +33,7 @@ class Settings(BaseSettings):
     skills_dir: Path = Field(default_factory=lambda: Path("skills").resolve())
     task_log_dir: Path = Field(default_factory=lambda: Path(".uni-agent/runs").resolve())
     log_level: str = "INFO"
-    sandbox_allowed_commands: str = "pwd,ls,cat,echo,rg"
+    sandbox_allowed_commands: str = Field(default=DEFAULT_SANDBOX_ALLOWED_COMMANDS)
     sandbox_prompt_for_disallowed: bool = Field(
         default=True,
         description="If true, non-allowlisted sandbox commands can be approved interactively (TTY only).",

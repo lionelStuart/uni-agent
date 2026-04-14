@@ -5,7 +5,11 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from uni_agent.config.settings import DEFAULT_SANDBOX_ALLOWED_COMMANDS, parse_sandbox_allowed_commands
+
 ApproveNonAllowlisted = Callable[[str, list[str]], bool]
+
+_BUILTIN_SANDBOX_ALLOWLIST = parse_sandbox_allowed_commands(DEFAULT_SANDBOX_ALLOWED_COMMANDS)
 
 
 class SandboxError(RuntimeError):
@@ -35,7 +39,7 @@ class LocalSandbox:
         approve_non_allowlisted: ApproveNonAllowlisted | None = None,
     ):
         self.workspace = workspace.resolve()
-        self.allowed_commands = allowed_commands or {"pwd", "ls", "cat", "echo", "rg"}
+        self.allowed_commands = allowed_commands or set(_BUILTIN_SANDBOX_ALLOWLIST)
         self.max_output_chars = max_output_chars
         self.command_timeout = command_timeout
         self._approve_non_allowlisted = approve_non_allowlisted

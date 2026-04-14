@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
 from uni_agent.agent.llm import EnvLLMProvider
 from uni_agent.agent.plan_loader import load_plan_file
-from uni_agent.agent.orchestrator import Orchestrator
+from uni_agent.agent.orchestrator import Orchestrator, StreamEventCallback
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer
 from uni_agent.agent.planner import HeuristicPlanner
 from uni_agent.agent.pydantic_planner import PydanticAIPlanner
@@ -33,7 +35,11 @@ def _sandbox_approval_callback(settings: Settings):
     return prompt_tty_approve_disallowed_command
 
 
-def build_orchestrator() -> Orchestrator:
+def _stderr_ndjson_stream(event: dict[str, Any]) -> None:
+    print(json.dumps(event, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
+def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orchestrator:
     settings = get_settings()
     configure_logging(settings.log_level)
     tool_registry = ToolRegistry()
@@ -106,6 +112,7 @@ def build_orchestrator() -> Orchestrator:
         max_step_retries=settings.tool_step_retries,
         max_failed_rounds=settings.orchestrator_max_failed_rounds,
         conclusion_synthesizer=conclusion_syn,
+        stream_event=stream_event,
     )
 
 
@@ -130,8 +137,15 @@ def run_task(
         dir_okay=False,
         readable=True,
     ),
+    stream: bool = typer.Option(
+        True,
+        "--stream/--no-stream",
+        help="Stream execution events to stderr as NDJSON (one JSON object per line).",
+    ),
 ) -> None:
-    orchestrator = build_orchestrator()
+    orchestrator = build_orchestrator(
+        stream_event=_stderr_ndjson_stream if stream else None,
+    )
     plan_override = load_plan_file(plan) if plan is not None else None
     result = orchestrator.run(task, plan_override=plan_override)
     typer.echo(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))

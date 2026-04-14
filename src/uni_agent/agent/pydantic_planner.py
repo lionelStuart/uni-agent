@@ -8,10 +8,10 @@ from pydantic_ai.settings import ModelSettings
 
 from uni_agent.agent.llm import LLMProvider, build_planner_model
 from uni_agent.agent.planner import HeuristicPlanner, Planner
-from uni_agent.config.settings import parse_sandbox_allowed_commands
+from uni_agent.config.settings import DEFAULT_SANDBOX_ALLOWED_COMMANDS, parse_sandbox_allowed_commands
 from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
 
-_DEFAULT_ALLOWED_SHELL = frozenset(parse_sandbox_allowed_commands("pwd,ls,cat,echo,rg"))
+_DEFAULT_ALLOWED_SHELL = frozenset(parse_sandbox_allowed_commands(DEFAULT_SANDBOX_ALLOWED_COMMANDS))
 
 
 class LLMPlanStep(BaseModel):

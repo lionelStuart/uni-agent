@@ -104,7 +104,9 @@ class RunConclusionSynthesizer:
             "Use the same language as the task when it is clearly Chinese or English; otherwise match the task. "
             "Base every claim on the provided log only — do not invent files, numbers, or outcomes. "
             "Say whether the original task goal appears achieved, summarize evidence from outputs, "
-            "and briefly explain failures or missing pieces."
+            "and briefly explain failures or missing pieces. "
+            "If the log unambiguously answers the question (e.g. du output shows the largest child directory), "
+            "state that answer directly and do not contradict yourself (do not say the result was not identified)."
         )
         agent_kwargs: dict = {
             "output_type": _ConclusionSchema,

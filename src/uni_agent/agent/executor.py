@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from uni_agent.sandbox.runner import SandboxError
 from uni_agent.shared.models import PlanStep, TaskStatus
 from uni_agent.tools.registry import ToolRegistry
@@ -10,7 +12,12 @@ class Executor:
         self.tool_registry = tool_registry
         self.max_step_retries = max(0, max_step_retries)
 
-    def execute(self, plan: list[PlanStep]) -> list[PlanStep]:
+    def execute(
+        self,
+        plan: list[PlanStep],
+        *,
+        on_step_complete: Callable[[PlanStep], None] | None = None,
+    ) -> list[PlanStep]:
         executed_steps: list[PlanStep] = []
         for step in plan:
             for attempt in range(self.max_step_retries + 1):
@@ -30,17 +37,20 @@ class Executor:
                     )
                     if attempt >= self.max_step_retries:
                         executed_steps.append(failed_step)
+                        if on_step_complete is not None:
+                            on_step_complete(failed_step)
                         return executed_steps
                     continue
 
-                executed_steps.append(
-                    running_step.model_copy(
-                        update={
-                            "status": TaskStatus.COMPLETED,
-                            "output": result,
-                        }
-                    )
+                done = running_step.model_copy(
+                    update={
+                        "status": TaskStatus.COMPLETED,
+                        "output": result,
+                    }
                 )
+                executed_steps.append(done)
+                if on_step_complete is not None:
+                    on_step_complete(done)
                 break
 
         return executed_steps
