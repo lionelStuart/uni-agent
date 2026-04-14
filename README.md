@@ -23,6 +23,8 @@
 - **交互客户端**：`agent client` 进入 REPL（默认按时间新建 session，落盘在 `UNI_AGENT_SESSION_DIR`）；每轮任务结束后追加写入 session；支持 `load <id>`、`sessions`、`new`；进度用人类可读格式打在 stderr
 - **流式过程**：默认 `agent run ... --stream` 在 **stderr** 输出 NDJSON 事件；`--no-stream` 关闭；**stdout** 仍为最终完整 JSON
 - **运行结论**：结果中含 `conclusion` 字段（规则摘要 + 可选 LLM）
+- **LLM 系统提示词**：内置默认文案（`agent/system_prompts.py`）；可通过 `UNI_AGENT_GLOBAL_SYSTEM_PROMPT`、`UNI_AGENT_PLANNER_INSTRUCTIONS`、`UNI_AGENT_CONCLUSION_SYSTEM_PROMPT` 覆盖或加前缀（见 `.env.example`）
+- **上下文与输出截断**：交互 session 对历史任务做规则化摘要（`compress_task_result_for_session`）；重规划时的 `prior_context` 与工具返回（如 `file_read` / sandbox）均有字符上限截断
 - **任务落盘**：`.uni-agent/runs/`（已 `.gitignore`，不提交）
 
 ## 开发约束
@@ -52,4 +54,4 @@ pytest
 python -m pytest -q
 ```
 
-（当前仓库约 **51** 个用例，以 `pytest` 输出为准。）
+（当前仓库约 **61** 个用例，以 `pytest` 输出为准。）
