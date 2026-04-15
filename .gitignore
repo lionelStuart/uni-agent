@@ -42,6 +42,9 @@ htmlcov/
 # Agent runtime (task logs — local only)
 .uni-agent/
 
+# Local-only skills (internal / copied; not tracked — e.g. token-usage-query from other repos)
+skills/token-usage-query/
+
 # OS / editor
 .DS_Store
 Thumbs.db

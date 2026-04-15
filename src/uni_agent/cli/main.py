@@ -74,7 +74,7 @@ def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orche
         memory_search_model_settings=model_settings,
         memory_search_keyword_retries=settings.llm_retries,
     )
-    skill_loader = SkillLoader(settings.skills_dir)
+    skill_loader = SkillLoader(settings.skills_dir, settings.workspace)
     heuristic = HeuristicPlanner()
 
     allowed_shell = frozenset(allowed_commands)
@@ -129,7 +129,7 @@ def build_orchestrator(stream_event: StreamEventCallback | None = None) -> Orche
 @app.command("skills")
 def list_skills() -> None:
     settings = get_settings()
-    loader = SkillLoader(settings.skills_dir)
+    loader = SkillLoader(settings.skills_dir, settings.workspace)
     skills = loader.load_all()
     for skill in skills:
         typer.echo(f"{skill.name}\t{skill.version}\t{skill.description}")

@@ -6,7 +6,7 @@
 
 - **Agent Runtime**：`Orchestrator` + `Planner`（启发式 / PydanticAI）+ `Executor`
 - **通用 Sandbox**：`LocalSandbox`（命令白名单、超时、可选交互批准）
-- **Skills**：本地 `skills/` 目录加载与匹配
+- **Skills**：本地 `skills/<name>/` 自动加载（**每层子目录一项 skill**）：优先 **`SKILL.md`**（YAML frontmatter + 正文，对齐 Codex / Claude Code / Cursor）；否则 **`skill.yaml`** + `entry` 指向的 Markdown。可选 **`references/`、`reference.md`、`examples.md`** 与 **`scripts/`**，合并为 `instruction_text`；小参考文件可内联进提示。`UNI_AGENT_SKILLS_DIR` 对应 `skills_dir`，加载器使用 **`UNI_AGENT_WORKSPACE`** 计算 `file_read` 用的相对路径
 
 详细设计见：
 
@@ -63,4 +63,4 @@ pytest
 python -m pytest -q
 ```
 
-（当前仓库约 **72** 个用例，以 `pytest` 输出为准。）
+（当前仓库约 **76** 个用例，以 `pytest` 输出为准。）

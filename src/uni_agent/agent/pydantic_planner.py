@@ -11,6 +11,7 @@ from uni_agent.agent.planner import HeuristicPlanner, Planner
 from uni_agent.agent.system_prompts import effective_planner_instructions
 from uni_agent.config.settings import DEFAULT_SANDBOX_ALLOWED_COMMANDS, parse_sandbox_allowed_commands
 from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
+from uni_agent.skills.bundle import planner_skill_context
 
 _DEFAULT_ALLOWED_SHELL = frozenset(parse_sandbox_allowed_commands(DEFAULT_SANDBOX_ALLOWED_COMMANDS))
 
@@ -107,6 +108,9 @@ class PydanticAIPlanner(Planner):
                 "Prior execution log (revise the plan; avoid repeating steps that already failed the same way):\n"
                 f"{prior_context}\n\n"
             )
+        skill_ctx = planner_skill_context(selected_skills)
+        if skill_ctx:
+            user_prompt += f"Selected skill instructions (follow when relevant):\n{skill_ctx}\n\n"
         shell_allow = ", ".join(sorted(self._allowed_shell))
         user_prompt += (
             f"Allowed tool names: {sorted(allowed)}\n"

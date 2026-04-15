@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+SkillLoadFormat = Literal["skill_md", "yaml_manifest"]
 
 
 class TaskStatus(str, Enum):
@@ -30,6 +32,10 @@ class SkillSpec(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     entry: str = "prompt.md"
     path: str
+    skill_load_format: SkillLoadFormat = "yaml_manifest"
+    instruction_text: str = ""
+    reference_paths: list[str] = Field(default_factory=list)
+    script_paths: list[str] = Field(default_factory=list)
 
 
 class PlanStep(BaseModel):
