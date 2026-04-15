@@ -14,6 +14,7 @@
 - [开发文档](docs/开发文档.md)
 - [进度文档](docs/进度文档.md)
 - [Skills 目录与 SKILL.md 说明](docs/Skills目录与SKILL说明.md)
+- [Agent 运行流程与领域模型](docs/Agent运行流程与领域模型.md)
 
 ## 能力摘要（当前实现）
 
