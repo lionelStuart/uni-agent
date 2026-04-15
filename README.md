@@ -13,6 +13,7 @@
 - [设计文档](docs/设计文档.md)
 - [开发文档](docs/开发文档.md)
 - [进度文档](docs/进度文档.md)
+- [Skills 目录与 SKILL.md 说明](docs/Skills目录与SKILL说明.md)
 
 ## 能力摘要（当前实现）
 

@@ -1,5 +1,7 @@
 # 正向案例：交互客户端 + 本地 Skill + 沙箱批准执行脚本
 
+Skill 目录树、`SKILL.md` frontmatter 与正文约定见：[Skills 目录与 SKILL 说明](../Skills目录与SKILL说明.md)。
+
 记录日期：2026-04-15（内容已脱敏，不含真实域名、用户标识与精确用量数值。）
 
 ## 场景
