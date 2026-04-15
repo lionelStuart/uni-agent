@@ -6,4 +6,6 @@ def test_builtin_tools_are_registered() -> None:
     registry.register_builtin_tools()
     assert "shell_exec" in registry.names()
     assert "search_workspace" in registry.names()
+    assert "command_lookup" in registry.names()
+    assert "run_python" in registry.names()
 

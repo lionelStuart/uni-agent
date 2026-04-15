@@ -7,7 +7,11 @@ def test_skill_loader_reads_sample_skill() -> None:
     loader = SkillLoader(Path("skills"), Path(".").resolve())
     skills = loader.load_all()
     assert skills
-    assert skills[0].name == "general-assistant"
-    assert skills[0].skill_load_format == "yaml_manifest"
-    assert "General Assistant" in skills[0].instruction_text
+    by_name = {s.name: s for s in skills}
+    assert "general-assistant" in by_name
+    ga = by_name["general-assistant"]
+    assert ga.skill_load_format == "yaml_manifest"
+    assert "General Assistant" in ga.instruction_text
+    assert "code-runner" in by_name
+    assert by_name["code-runner"].skill_load_format == "skill_md"
 

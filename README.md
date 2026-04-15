@@ -20,7 +20,8 @@
 
 - `agent run "<任务>"`：自动规划并执行工具；支持 `--plan` 静态计划文件
 - **多轮重规划**：失败后带执行日志再规划（`UNI_AGENT_ORCHESTRATOR_MAX_FAILED_ROUNDS`）
-- **内置工具**：`shell_exec`、`file_read`、`file_write`、`http_fetch`、`search_workspace`（ripgrep 固定字符串；无匹配不视为失败）
+- **内置工具**：`shell_exec`、`file_read`、`file_write`、`http_fetch`、`search_workspace`（ripgrep 固定字符串；无匹配不视为失败）、`command_lookup`（解析 PATH 上的命令名、可选抓取 `--help`/`-h`、或按前缀列举可执行文件名）、`run_python`（workspace 沙箱内短片段，临时文件在 `.uni-agent/code_run/`）、`memory_search`（本地 L0/L1）；与能力绑定，**规划阶段始终**向模型/启发式提供完整工具清单
+- **Skills 与工具**：匹配到的 skill 主要注入 `instruction_text`（及元数据）；`allowed_tools` 等字段**不**用于限制本轮可选内置工具，避免误把「领域说明」当成「工具白名单」
 - **OpenAI 兼容 API**：`UNI_AGENT_OPENAI_BASE_URL` / `UNI_AGENT_OPENAI_API_KEY`；适配 Qwen 等网关的 `tool_choice` 行为
 - **交互客户端**：`agent client` 进入 REPL（默认按时间新建 session，落盘在 `UNI_AGENT_SESSION_DIR`）；每轮任务结束后追加写入 session；支持 `load <id>`、`sessions`、`new`；进度用人类可读格式打在 stderr
 - **流式过程**：默认 `agent run ... --stream` 在 **stderr** 输出 NDJSON 事件；`--no-stream` 关闭；**stdout** 仍为最终完整 JSON
@@ -65,4 +66,4 @@ pytest
 python -m pytest -q
 ```
 
-（当前仓库约 **76** 个用例，以 `pytest` 输出为准。）
+（当前仓库约 **86** 个用例，以 `pytest` 输出为准。）

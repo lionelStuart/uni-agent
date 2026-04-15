@@ -13,7 +13,8 @@ load_dotenv()
 PlannerBackend = Literal["auto", "heuristic", "pydantic_ai"]
 
 # Single source for CLI sandbox + planner hints (comma-separated).
-DEFAULT_SANDBOX_ALLOWED_COMMANDS = "pwd,ls,cat,echo,rg,du"
+# Includes python3/python for the run_python builtin (workspace-scoped snippets).
+DEFAULT_SANDBOX_ALLOWED_COMMANDS = "pwd,ls,cat,echo,rg,du,python3,python"
 
 
 class Settings(BaseSettings):

@@ -12,5 +12,7 @@ allowed_tools:
   - file_read
   - search_workspace
   - memory_search
+  - command_lookup
+  - run_python
 entry: prompt.md
 

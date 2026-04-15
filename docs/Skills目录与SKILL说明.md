@@ -12,6 +12,8 @@
 
 ```text
 skills/
+├── code-runner/                # 内置：Python 片段执行（配合 run_python 工具）
+│   └── SKILL.md
 ├── general-assistant/          # 示例：仅 skill.yaml + entry 文案（旧式 manifest）
 │   ├── skill.yaml
 │   └── prompt.md
@@ -79,7 +81,7 @@ description: >-
 | `version` | 否 | 版本字符串；默认 `0.0.0`。 |
 | `triggers` | 否 | 字符串或字符串列表；任务文本 **子串命中** 时加分。 |
 | `priority` | 否 | 整数，匹配排序基底分。 |
-| `allowed_tools` | 否 | 允许使用的内置工具名列表；多 skill 选中时为 **并集** 再与注册表求交。 |
+| `allowed_tools` | 否 | 可选：文档/约定用工具名列表（**不**再用于收窄规划器可选工具；规划始终可见全部内置工具）。 |
 | `required_tools` | 否 | 声明依赖（当前以清单为主，执行策略可后续加强）。 |
 
 多行 `description` 可使用 YAML 的 `>-` / `|` 折叠或字面块。
@@ -107,8 +109,9 @@ description: >-
 1. **发现**：每个 `skills/<dir>/` 含 `SKILL.md` 或 `skill.yaml` 即加载为一项 `SkillSpec`。
 2. **合成 `instruction_text`**：正文 + 可选内联参考 + `scripts/` 路径说明；总长上限约 6 万字符（超出截断）。
 3. **匹配**：`SkillMatcher` 对 `triggers` 与子串打分；**无 triggers** 时用 `description` 拆词辅助匹配。
-4. **规划注入**：**仅 `PydanticAIPlanner`（LLM 规划）** 将选中技能的 `instruction_text` 写入用户提示；启发式规划不读长文。
-5. **路径与安全**：`file_read` 仅能读 **workspace** 内路径；脚本常需 `bash`/`python3`/`curl`/`jq` 等，需在 **`UNI_AGENT_SANDBOX_ALLOWED_COMMANDS`** 中配置，或在 TTY 下 **一次性批准**。
+4. **内置工具集**：规划阶段（启发式与 LLM）**始终** 可选用 **全部已注册内置工具**；`allowed_tools` 字段**不**用于限制本轮可见工具，仅可作 skill 自述或后续策略扩展。选中技能通过 `instruction_text` 提供领域说明，**不**删减工具列表。
+5. **规划注入**：**仅 `PydanticAIPlanner`（LLM 规划）** 将选中技能的 `instruction_text` 写入用户提示（含「与技能说明对齐」）；启发式规划不读长文。
+6. **路径与安全**：`file_read` 仅能读 **workspace** 内路径；脚本常需 `bash`/`python3`/`curl`/`jq` 等，需在 **`UNI_AGENT_SANDBOX_ALLOWED_COMMANDS`** 中配置，或在 TTY 下 **一次性批准**。
 
 更完整的模块职责见 [开发文档](./开发文档.md) §4.3。
 

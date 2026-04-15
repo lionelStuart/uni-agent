@@ -50,6 +50,7 @@ class LocalSandbox:
         timeout: int | None = None,
         *,
         accept_exit_codes: frozenset[int] | None = None,
+        append_stderr: bool = False,
     ) -> str:
         if not command:
             raise SandboxError("Empty command is not allowed.")
@@ -77,6 +78,11 @@ class LocalSandbox:
         ok = frozenset({0}) if accept_exit_codes is None else accept_exit_codes
         if completed.returncode not in ok:
             raise SandboxError(error or f"Command failed with exit code {completed.returncode}.")
+        if append_stderr and error:
+            if output:
+                output = f"{output}\n[stderr]\n{error}"
+            else:
+                output = f"[stderr]\n{error}"
         return self._truncate(output)
 
     def _truncate(self, output: str) -> str:

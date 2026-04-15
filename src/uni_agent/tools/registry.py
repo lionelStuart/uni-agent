@@ -49,6 +49,27 @@ class ToolRegistry:
                 ),
             ),
             ToolSpec(
+                name="command_lookup",
+                description=(
+                    "Discover local CLI programs on PATH before using shell_exec. "
+                    "Two modes: (1) `name` — resolve one command via which, optional `include_help` (default true) "
+                    "captures --help or -h from the resolved binary (timeout capped). "
+                    "(2) `prefix` — list executable basenames on PATH starting with `prefix` (optional `max_list`, default 60). "
+                    "Provide either `name` or `prefix` (if both, `name` wins). Does not modify workspace files."
+                ),
+                risk_level="low",
+            ),
+            ToolSpec(
+                name="run_python",
+                description=(
+                    "Execute a Python snippet in the workspace sandbox: writes a temporary `.py` under "
+                    "`.uni-agent/code_run/`, runs `python3` or `python` with cwd=workspace (so imports can use "
+                    "project packages), then deletes the file. Args: `source` (required), optional `timeout_seconds` "
+                    "(1–120, default 30). Stderr is appended on success when non-empty. Non-zero exit raises."
+                ),
+                risk_level="high",
+            ),
+            ToolSpec(
                 name="memory_search",
                 description=(
                     "Recall saved client-session memory: when an LLM is configured, expands `query` into keywords, "

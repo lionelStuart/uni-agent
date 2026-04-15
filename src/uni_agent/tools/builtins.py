@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -10,6 +12,7 @@ from uni_agent.agent.llm import LLMProvider
 from uni_agent.agent.memory_llm_search import run_memory_search_llm
 from uni_agent.observability.local_memory import search_memory_directory
 from uni_agent.sandbox.runner import LocalSandbox
+from uni_agent.tools.command_lookup import run_command_lookup
 from uni_agent.tools.http_fetch_policy import (
     assert_http_fetch_host_allowlist,
     assert_public_http_url,
@@ -17,6 +20,19 @@ from uni_agent.tools.http_fetch_policy import (
 )
 
 _RG_OK_NO_MATCH = frozenset({0, 1})
+
+_MAX_RUN_PYTHON_SOURCE_CHARS = 200_000
+_MAX_RUN_PYTHON_TIMEOUT = 120
+
+
+def _python_exe_for_sandbox() -> str:
+    if shutil.which("python3"):
+        return "python3"
+    if shutil.which("python"):
+        return "python"
+    raise ValueError(
+        "run_python: no `python3` or `python` on PATH. Install Python or extend PATH."
+    )
 
 
 def register_builtin_handlers(
@@ -123,6 +139,57 @@ def register_builtin_handlers(
                 pass
         return search_memory_directory(resolved_memory_dir, query.strip(), limit=limit)
 
+    def run_python(arguments: dict) -> str:
+        source = arguments.get("source")
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError("run_python requires non-empty string 'source' (Python source code).")
+        if len(source) > _MAX_RUN_PYTHON_SOURCE_CHARS:
+            raise ValueError(
+                f"run_python 'source' exceeds {_MAX_RUN_PYTHON_SOURCE_CHARS} characters."
+            )
+        raw_t = arguments.get("timeout_seconds", 30)
+        if isinstance(raw_t, bool):
+            raise ValueError("run_python 'timeout_seconds' must be an integer.")
+        try:
+            timeout = int(raw_t)
+        except (TypeError, ValueError):
+            timeout = 30
+        timeout = max(1, min(_MAX_RUN_PYTHON_TIMEOUT, timeout))
+
+        exe = _python_exe_for_sandbox()
+        run_root = resolved_workspace / ".uni-agent" / "code_run"
+        run_root.mkdir(parents=True, exist_ok=True)
+        script_path = run_root / f"snippet_{uuid.uuid4().hex[:16]}.py"
+        rel = script_path.relative_to(resolved_workspace)
+        try:
+            script_path.write_text(source, encoding="utf-8")
+            return sandbox.run([exe, str(rel)], timeout=timeout, append_stderr=True)
+        finally:
+            try:
+                script_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def command_lookup(arguments: dict) -> str:
+        name = arguments.get("name")
+        prefix = arguments.get("prefix")
+        include_help = arguments.get("include_help", True)
+        if not isinstance(include_help, bool):
+            raise ValueError("command_lookup 'include_help' must be a boolean.")
+        raw_ml = arguments.get("max_list", 60)
+        if isinstance(raw_ml, bool):
+            raise ValueError("command_lookup 'max_list' must be an integer.")
+        try:
+            max_list = int(raw_ml)
+        except (TypeError, ValueError):
+            max_list = 60
+        return run_command_lookup(
+            name=name if isinstance(name, str) else None,
+            prefix=prefix if isinstance(prefix, str) else None,
+            include_help=include_help,
+            max_list=max_list,
+        )
+
     def search_workspace(arguments: dict) -> str:
         query = arguments.get("query")
         if not isinstance(query, str):
@@ -147,6 +214,8 @@ def register_builtin_handlers(
     tool_registry.attach_handler("file_read", file_read)
     tool_registry.attach_handler("file_write", file_write)
     tool_registry.attach_handler("http_fetch", http_fetch)
+    tool_registry.attach_handler("run_python", run_python)
+    tool_registry.attach_handler("command_lookup", command_lookup)
     tool_registry.attach_handler("search_workspace", search_workspace)
     tool_registry.attach_handler("memory_search", memory_search)
 

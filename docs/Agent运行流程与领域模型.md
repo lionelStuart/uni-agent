@@ -12,7 +12,7 @@
 |------|------|
 | `TaskStatus` | 步骤/任务生命周期：`pending` → `running` → `completed` / `failed`。 |
 | `ToolSpec` | 注册表中的工具：名称、描述、风险等级、`input_schema`。 |
-| `SkillSpec` | 本地 skill：元数据（`name`、`version`、`description`、`triggers`、`priority`）、`allowed_tools` / `required_tools`、路径 `path`；加载器还会填充 `instruction_text`、`reference_paths`、`script_paths`、`skill_load_format`。 |
+| `SkillSpec` | 本地 skill：元数据（`name`、`version`、`description`、`triggers`、`priority`）、`allowed_tools` / `required_tools`（可选；**不**限制规划器可见工具）、路径 `path`；加载器还会填充 `instruction_text`、`reference_paths`、`script_paths`、`skill_load_format`。 |
 | `PlanStep` | **原子执行单元**：`id`、`description`、`tool`、`skill`（可选）、`arguments`、`status`、`output`、失败时的 `error_*` / `failure_code`。 |
 | `TaskResult` | **单次 run 的结果**：`run_id`、`task`、`status`、`selected_skills`、`available_tools`、**累积的** `plan`、`output`、`error`、`orchestrator_failed_rounds`、`conclusion`。 |
 | `TaskRunRecord` | 落盘封装：`run_id` + `TaskResult`（供回放）。 |
@@ -28,8 +28,8 @@
 ### 2.1 准备阶段
 
 1. 生成 `run_id`（`TaskStore`）。
-2. `SkillLoader.load_all()` 加载全部 skill；`SkillMatcher.match(task)` 打分，取 **前 2 个** 作为 `selected_skills`（影响允许的工具子集及 LLM 规划中的 skill 正文注入）。
-3. `ToolRegistry.list_tools()` 得到当次可用工具列表。
+2. `SkillLoader.load_all()` 加载全部 skill；`SkillMatcher.match(task)` 打分，取 **前 2 个** 作为 `selected_skills`（供 `TaskResult`、LLM 用户提示中注入「Selected skill instructions」，以及步骤上可选的 `skill` 标注；**不**收窄规划器可见的内置工具集合）。
+3. `ToolRegistry.list_tools()` 得到当次可用工具列表：**始终为注册表中的全部内置工具**，与 `selected_skills` 或 `SkillSpec.allowed_tools` 无关。
 
 ### 2.2 分支
 
@@ -53,6 +53,12 @@
 - 拼接各步 `output` 为总 `output`；失败时写入 `error`。
 - `conclusion`：先规则摘要，若配置 LLM 再合成。
 - 保存 `TaskResult` 至任务日志目录；可选通过 `stream_event` 输出 NDJSON 事件（`run_begin`、`round_plan`、`step_finished`、`round_failed`、`conclusion_*`、`run_end`）。
+
+### 2.5 内置工具与 Skill 的关系
+
+- **内置工具**在 `ToolRegistry` 中注册，与「是否匹配到某个 skill」正交；规划器（启发式与 LLM）每轮都能从**完整**工具清单中选步。
+- **Skill** 主要提供 `instruction_text`（及 `triggers` / `description` 等匹配信号），帮助模型选对工具与步骤顺序；`allowed_tools` / `required_tools` 可作文档或后续策略字段，**当前不用于**限制规划阶段可选的工具名集合。
+- 默认规划系统提示见 `src/uni_agent/agent/system_prompts.py` 中的 `DEFAULT_PLANNER_SYSTEM_PROMPT`（可通过 `UNI_AGENT_PLANNER_INSTRUCTIONS` 整体覆盖）。
 
 ---
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -14,6 +15,9 @@ from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
 from uni_agent.skills.bundle import planner_skill_context
 
 _DEFAULT_ALLOWED_SHELL = frozenset(parse_sandbox_allowed_commands(DEFAULT_SANDBOX_ALLOWED_COMMANDS))
+
+_CMD_LOOKUP_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.+-]{0,255}$")
+_CMD_LOOKUP_PREFIX = re.compile(r"^[a-zA-Z0-9_.+-]{1,32}$")
 
 
 class LLMPlanStep(BaseModel):
@@ -132,15 +136,8 @@ class PydanticAIPlanner(Planner):
         return normalized
 
     def _resolve_allowed_tools(self, selected_skills: list[SkillSpec], tool_names: set[str]) -> set[str]:
-        if not selected_skills:
-            return set(tool_names)
-        restricted: set[str] = set()
-        for skill in selected_skills:
-            if skill.allowed_tools:
-                restricted.update(skill.allowed_tools)
-        base = restricted or tool_names
-        resolved = base & tool_names
-        return resolved if resolved else set(tool_names)
+        """All registered tools are always available; skills supply extra instructions, not a subset of tools."""
+        return set(tool_names)
 
     def _normalize_plan(
         self,
@@ -200,5 +197,45 @@ class PydanticAIPlanner(Planner):
                 return True
             if isinstance(lim, str) and lim.strip().isdigit():
                 return True
+            return False
+        if tool == "command_lookup":
+            name = arguments.get("name")
+            prefix = arguments.get("prefix")
+            n_ok = isinstance(name, str) and bool(name.strip()) and bool(_CMD_LOOKUP_NAME.match(name.strip()))
+            p_ok = isinstance(prefix, str) and bool(prefix.strip()) and bool(
+                _CMD_LOOKUP_PREFIX.match(prefix.strip())
+            )
+            if not n_ok and not p_ok:
+                return False
+            ih = arguments.get("include_help", True)
+            if ih is not None and not isinstance(ih, bool):
+                return False
+            if "max_list" in arguments:
+                ml = arguments["max_list"]
+                if isinstance(ml, bool):
+                    return False
+                if isinstance(ml, int):
+                    if not 1 <= ml <= 200:
+                        return False
+                elif isinstance(ml, str) and ml.strip().isdigit():
+                    if not 1 <= int(ml.strip()) <= 200:
+                        return False
+                else:
+                    return False
+            return True
+        if tool == "run_python":
+            if not isinstance(arguments.get("source"), str) or not arguments.get("source", "").strip():
+                return False
+            if len(arguments["source"]) > 200_000:
+                return False
+            if "timeout_seconds" not in arguments:
+                return True
+            ts = arguments["timeout_seconds"]
+            if isinstance(ts, bool):
+                return False
+            if isinstance(ts, int):
+                return 1 <= ts <= 120
+            if isinstance(ts, str) and ts.strip().isdigit():
+                return 1 <= int(ts.strip()) <= 120
             return False
         return False

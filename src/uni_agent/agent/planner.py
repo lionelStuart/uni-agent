@@ -208,14 +208,11 @@ class HeuristicPlanner(Planner):
         return match.group(1).rstrip(").,;]")
 
     def _resolve_allowed_tools(self, selected_skills: list[SkillSpec], tool_names: set[str]) -> set[str]:
-        if not selected_skills:
-            return set(tool_names)
+        """Built-in tools are always offered to the planner; skills add ``instruction_text`` only.
 
-        allowed: set[str] = set()
-        for skill in selected_skills:
-            if skill.allowed_tools:
-                allowed.update(skill.allowed_tools)
-        return allowed or set(tool_names)
+        ``SkillSpec.allowed_tools`` does **not** narrow the palette (see design: tools match capabilities).
+        """
+        return set(tool_names)
 
     def _extract_path(self, task: str) -> str | None:
         match = self._PATH_PATTERN.search(task)
