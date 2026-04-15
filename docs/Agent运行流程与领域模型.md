@@ -74,6 +74,8 @@
 | 会话上下文 | `observability/client_session.py` 等 |
 | 审计 / 回放 | `observability/task_store.py`、`cli` 的 `replay` |
 
+**CLI 回放**：`agent replay <run_id>` 调用 `TaskStore.load`，返回当时保存的完整 `TaskResult`（不重新执行工具）；`--format` 控制 stdout 为完整 JSON、仅步骤行、或步骤 NDJSON + 末尾摘要行。
+
 ---
 
 ## 4. 相关文档

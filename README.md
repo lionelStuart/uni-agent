@@ -19,11 +19,12 @@
 ## 能力摘要（当前实现）
 
 - `agent run "<任务>"`：自动规划并执行工具；支持 `--plan` 静态计划文件
+- **历史回放**：`agent replay <run_id>` 从 `.uni-agent/runs/` 读出已落盘的 `TaskResult`；`--format full|steps|jsonl`（默认 `full` 为完整 JSON），`--verbose` 在 `full` 模式下额外打印每步摘要
 - **多轮重规划**：失败后带执行日志再规划（`UNI_AGENT_ORCHESTRATOR_MAX_FAILED_ROUNDS`）
 - **内置工具**：`shell_exec`、`file_read`、`file_write`、`http_fetch`、`search_workspace`（ripgrep 固定字符串；无匹配不视为失败）、`command_lookup`（解析 PATH 上的命令名、可选抓取 `--help`/`-h`、或按前缀列举可执行文件名）、`run_python`（workspace 沙箱内短片段，临时文件在 `.uni-agent/code_run/`）、`memory_search`（本地 L0/L1）；与能力绑定，**规划阶段始终**向模型/启发式提供完整工具清单
 - **Skills 与工具**：匹配到的 skill 主要注入 `instruction_text`（及元数据）；`allowed_tools` 等字段**不**用于限制本轮可选内置工具，避免误把「领域说明」当成「工具白名单」
 - **OpenAI 兼容 API**：`UNI_AGENT_OPENAI_BASE_URL` / `UNI_AGENT_OPENAI_API_KEY`；适配 Qwen 等网关的 `tool_choice` 行为
-- **交互客户端**：`agent client` 进入 REPL（默认按时间新建 session，落盘在 `UNI_AGENT_SESSION_DIR`）；每轮任务结束后追加写入 session；支持 `load <id>`、`sessions`、`new`；进度用人类可读格式打在 stderr
+- **交互客户端**：`agent client` 进入 REPL（`--session` / `-s` 可加载已有 session id 或 id 前缀；默认新建 session，落盘在 `UNI_AGENT_SESSION_DIR`）；每轮任务结束后追加写入 session；内置命令：`load <id>`、`sessions`、`new`、`status`、`help` / `?`、`exit` / `quit` / `:q`；**记忆**：`memory search <q>`（与工具 `memory_search` 同策略）、`memory status`、`memory extract`（立即把本会话未落盘轮次写入 `memory_dir`）；空闲 `UNI_AGENT_MEMORY_IDLE_EXTRACT_SECONDS` 后也会后台增量落盘（见 `UNI_AGENT_MEMORY_EXTRACT_ENABLED`）；进度用人类可读格式打在 stderr
 - **流式过程**：默认 `agent run ... --stream` 在 **stderr** 输出 NDJSON 事件；`--no-stream` 关闭；**stdout** 仍为最终完整 JSON
 - **运行结论**：结果中含 `conclusion` 字段（规则摘要 + 可选 LLM）
 - **LLM 系统提示词**：内置默认文案（`agent/system_prompts.py`）；可通过 `UNI_AGENT_GLOBAL_SYSTEM_PROMPT`、`UNI_AGENT_PLANNER_INSTRUCTIONS`、`UNI_AGENT_CONCLUSION_SYSTEM_PROMPT` 覆盖或加前缀（见 `.env.example`）
@@ -50,6 +51,8 @@ agent skills
 agent run "read README.md"
 # 仅看最终 JSON、不要 stderr 流式事件：
 # agent run "read README.md" --no-stream
+# 回放某次 run（run_id 见当次 JSON 或 .uni-agent/runs/*.json）：
+# agent replay <run_id> --format steps
 
 pytest
 ```
