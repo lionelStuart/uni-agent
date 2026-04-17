@@ -31,6 +31,7 @@
 - **上下文与输出截断**：交互 session 对历史任务做规则化摘要（`compress_task_result_for_session`）；重规划时的 `prior_context` 与工具返回（如 `file_read` / sandbox）均有字符上限截断
 - **本地记忆夹**：默认目录 **`$UNI_AGENT_WORKSPACE/.uni-agent/memory`**（`UNI_AGENT_MEMORY_DIR` 相对路径亦以 workspace 为基准，避免 shell cwd 与项目根不一致时读写/检索分叉）；**`memory_index.json`** 存 **L0** 与 **`l1/*.json`** 路径；**`memory_search`**（工具与 REPL `memory search`）在配置 LLM 时：**由模型根据问题生成关键词 → 在 L0 上做子串匹配 → 将命中条目的 L1 交给模型整理回答**（关键词 LLM 失败时仍用用户原问句参与匹配）；关闭 `UNI_AGENT_MEMORY_SEARCH_USE_LLM` 时退化为 L0 字面子串检索
 - **规划侧「回忆」路由**：任务含 **我是谁 / 我叫什么 / 还记得我吗 / who am i** 等短语时，**启发式与 PydanticAI 规划器**均优先单步 **`memory_search`**（再走 L0/L1），避免被默认「闲聊 → echo」规则带偏
+- **规划侧「委派」路由**：在 **`memory_search` 未命中** 的前提下，任务原文含 **`delegate_task` / 子代理 / sub-agent / subagent** 时，**启发式与 PydanticAI**（含在调用规划 LLM 之前）均可直接单步 **`delegate_task`**；隐式拆子代理仍主要依赖 LLM 或 `--plan` 静态计划（见 `docs/cases/design-trigger-subagent-delegate-task.md`）
 - **任务落盘**：`.uni-agent/runs/`（已 `.gitignore`，不提交）
 
 ## 开发约束

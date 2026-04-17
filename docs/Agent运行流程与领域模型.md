@@ -41,7 +41,7 @@
 1. `prior_context`：将**已执行步骤**（含截断的 output / error）格式化为文本；首轮为空。
 2. `planner.create_plan(task, selected_skills, tools, prior_context=..., session_context=...)`  
    - `session_context`：交互客户端传入的会话压缩摘要。  
-   - Planner 实现：`HeuristicPlanner` 与/或 `PydanticAIPlanner`（LLM 结构化计划，可回退启发式）；共享部分意图短路（如回忆类 → `memory_search`）。
+   - Planner 实现：`HeuristicPlanner` 与/或 `PydanticAIPlanner`（LLM 结构化计划，可回退启发式）；共享部分意图短路（如回忆类 → `memory_search`；其后若任务含 **委派显式关键词** → 单步 `delegate_task`，见 `agent/planner.py` 中 `DELEGATE_USER_INTENT_PATTERN`）。
 3. `executor.execute(plan)` 逐步调用工具；步骤 id 会加上轮次前缀 `r{n}-`。
 4. 若本批**全部** `completed` → 成功结束循环。  
 5. 否则 `failed_rounds` 递增，将本轮结果并入 `accumulated`，下一轮带着新的 `prior_context` **再规划**；若空计划或持续失败，计数至 `max_failed_rounds` 则停止。
@@ -59,6 +59,14 @@
 - **内置工具**在 `ToolRegistry` 中注册，与「是否匹配到某个 skill」正交；规划器（启发式与 LLM）每轮都能从**完整**工具清单中选步。
 - **Skill** 主要提供 `instruction_text`（及 `triggers` / `description` 等匹配信号），帮助模型选对工具与步骤顺序；`allowed_tools` / `required_tools` 可作文档或后续策略字段，**当前不用于**限制规划阶段可选的工具名集合。
 - 默认规划系统提示见 `src/uni_agent/agent/system_prompts.py` 中的 `DEFAULT_PLANNER_SYSTEM_PROMPT`（可通过 `UNI_AGENT_PLANNER_INSTRUCTIONS` 整体覆盖）。
+
+### 2.6 Sub-agent（`delegate_task`）
+
+- **执行**：计划中出现并完成 `delegate_task` 步骤时，内置 handler 在父 `run_id` 上下文内调用 `build_orchestrator(enable_delegate_tool=False, tool_profile=settings.delegate_tool_profile, …)`，对拼接后的子任务字符串执行一次子 `Orchestrator.run`；子 `TaskResult.parent_run_id` 指向父 run。
+- **规划**：除 `--plan` 写死与 LLM 选用外，启发式与 Pydantic 规划在 **`memory_search` 短路之后** 对 **`DELEGATE_USER_INTENT_PATTERN`**（`delegate_task`、`子代理`、`sub-agent`、`subagent`）做第二路短路，直接生成单步 `delegate_task`（整段用户输入作为 `task`）。
+- **单层**：子 run 工具表中不包含 `delegate_task`，避免递归委派。
+- **环境变量**：`UNI_AGENT_DELEGATE_MAX_FAILED_ROUNDS`、`UNI_AGENT_DELEGATE_TOOL_PROFILE`（子 run 工具子集；`readonly` 时仅 `file_read` / `search_workspace` / `memory_search` / `command_lookup`）。
+- **文档**：行为与示例见 [设计案例：触发 Sub Agent](./cases/design-trigger-subagent-delegate-task.md)。
 
 ---
 
