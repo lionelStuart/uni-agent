@@ -26,7 +26,7 @@ dev = [
 ]
 
 [project.scripts]
-agent = "uni_agent.cli.main:app"
+"uni-agent" = "uni_agent.cli.main:app"
 
 [tool.setuptools.package-dir]
 "" = "src"

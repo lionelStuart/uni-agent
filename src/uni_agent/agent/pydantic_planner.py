@@ -8,7 +8,7 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from uni_agent.agent.llm import LLMProvider, build_planner_model
-from uni_agent.agent.planner import HeuristicPlanner, Planner
+from uni_agent.agent.planner import DELEGATE_USER_INTENT_PATTERN, HeuristicPlanner, Planner
 from uni_agent.agent.system_prompts import effective_planner_instructions
 from uni_agent.config.settings import DEFAULT_SANDBOX_ALLOWED_COMMANDS, parse_sandbox_allowed_commands
 from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
@@ -98,6 +98,18 @@ class PydanticAIPlanner(Planner):
                     tool="memory_search",
                     skill=selected_skill,
                     arguments={"query": mem_q},
+                )
+            ]
+        stripped_task = task.strip()
+        if DELEGATE_USER_INTENT_PATTERN.search(stripped_task) and "delegate_task" in allowed:
+            selected_skill = selected_skills[0].name if selected_skills else None
+            return [
+                PlanStep(
+                    id="step-1",
+                    description="Run nested agent (user explicitly requested sub-agent / delegate_task).",
+                    tool="delegate_task",
+                    skill=selected_skill,
+                    arguments={"task": stripped_task},
                 )
             ]
         tool_lines = "\n".join(f"- {t.name}: {t.description}" for t in available_tools if t.name in allowed)
@@ -238,4 +250,14 @@ class PydanticAIPlanner(Planner):
             if isinstance(ts, str) and ts.strip().isdigit():
                 return 1 <= int(ts.strip()) <= 120
             return False
+        if tool == "delegate_task":
+            task = arguments.get("task")
+            if not isinstance(task, str) or not task.strip():
+                return False
+            ctx = arguments.get("context")
+            if ctx is not None and not isinstance(ctx, str):
+                return False
+            if "include_session" in arguments and not isinstance(arguments.get("include_session"), bool):
+                return False
+            return True
         return False

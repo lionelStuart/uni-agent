@@ -6,7 +6,7 @@ Skill 目录树、`SKILL.md` frontmatter 与正文约定见：[Skills 目录与 
 
 ## 场景
 
-在仓库根目录启动交互客户端（`agent client`），工作区为某本地项目目录。用户已配置 OpenAI 兼容网关以使用结构化规划（LLM）。
+在仓库根目录启动交互客户端（`uni-agent client`），工作区为某本地项目目录。用户已配置 OpenAI 兼容网关以使用结构化规划（LLM）。
 
 用户连续发起三轮对话：
 

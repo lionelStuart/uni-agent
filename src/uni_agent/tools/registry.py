@@ -1,8 +1,93 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-
+from uni_agent.config.settings import DelegateToolProfile
 from uni_agent.shared.models import ToolSpec
+
+_READONLY_TOOL_NAMES = frozenset(
+    {"file_read", "search_workspace", "memory_search", "command_lookup"}
+)
+
+
+def _delegate_tool_spec() -> ToolSpec:
+    return ToolSpec(
+        name="delegate_task",
+        description=(
+            "Run a **separate** agent pass (new run_id, own plan) for a **single** sub-goal. "
+            "Use for a clearly scoped subtask (e.g. analyze one area then return). "
+            "Args: `task` (required) — what the child must accomplish; "
+            "optional `context` — short facts/paths for the child; "
+            "optional `include_session` (bool) — if true, append the parent interactive session snapshot. "
+            "Child runs **cannot** delegate again. "
+            "Returns text with CHILD_RUN_ID, STATUS, CONCLUSION, OUTPUT_SNIPPET."
+        ),
+        risk_level="high",
+    )
+
+
+def _core_builtin_specs() -> tuple[ToolSpec, ...]:
+    return (
+        ToolSpec(
+            name="shell_exec",
+            description=(
+                "Run one program via argv only (JSON list of strings); "
+                "no shell, pipes, or operators — the first string is the executable name. "
+                "Binaries not on the sandbox allowlist may require interactive approval (CLI)."
+            ),
+            risk_level="high",
+        ),
+        ToolSpec(
+            name="file_read",
+            description="Read a file from the workspace.",
+        ),
+        ToolSpec(
+            name="file_write",
+            description="Write a file inside the workspace.",
+            risk_level="high",
+        ),
+        ToolSpec(
+            name="http_fetch",
+            description="Fetch a remote resource when network access is allowed.",
+            risk_level="medium",
+        ),
+        ToolSpec(
+            name="search_workspace",
+            description=(
+                "Search file contents: `query` is a literal substring (ripgrep fixed-string, not regex). "
+                "Whitespace is normalized to single spaces (do not paste multi-line logs into `query`). "
+                "Queries `*`, `**`, `.*`, or whitespace-only list files in the workspace."
+            ),
+        ),
+        ToolSpec(
+            name="command_lookup",
+            description=(
+                "Discover local CLI programs on PATH before using shell_exec. "
+                "Two modes: (1) `name` — resolve one command via which, optional `include_help` (default true) "
+                "captures --help or -h from the resolved binary (timeout capped). "
+                "(2) `prefix` — list executable basenames on PATH starting with `prefix` (optional `max_list`, default 60). "
+                "Provide either `name` or `prefix` (if both, `name` wins). Does not modify workspace files."
+            ),
+            risk_level="low",
+        ),
+        ToolSpec(
+            name="run_python",
+            description=(
+                "Execute a Python snippet in the workspace sandbox: writes a temporary `.py` under "
+                "`.uni-agent/code_run/`, runs `python3` or `python` with cwd=workspace (so imports can use "
+                "project packages), then deletes the file. Args: `source` (required), optional `timeout_seconds` "
+                "(1–120, default 30). Stderr is appended on success when non-empty. Non-zero exit raises."
+            ),
+            risk_level="high",
+        ),
+        ToolSpec(
+            name="memory_search",
+            description=(
+                "Recall saved client-session memory: when an LLM is configured, expands `query` into keywords, "
+                "matches L0 index lines, then reads matching L1 records and returns a synthesized answer; "
+                "otherwise substring search on the index. Optional `limit` (1–50) caps rows considered."
+            ),
+        ),
+    )
 
 
 class ToolRegistry:
@@ -15,69 +100,18 @@ class ToolRegistry:
         if handler is not None:
             self._handlers[tool.name] = handler
 
-    def register_builtin_tools(self) -> None:
-        for tool in (
-            ToolSpec(
-                name="shell_exec",
-                description=(
-                    "Run one program via argv only (JSON list of strings); "
-                    "no shell, pipes, or operators — the first string is the executable name. "
-                    "Binaries not on the sandbox allowlist may require interactive approval (CLI)."
-                ),
-                risk_level="high",
-            ),
-            ToolSpec(
-                name="file_read",
-                description="Read a file from the workspace.",
-            ),
-            ToolSpec(
-                name="file_write",
-                description="Write a file inside the workspace.",
-                risk_level="high",
-            ),
-            ToolSpec(
-                name="http_fetch",
-                description="Fetch a remote resource when network access is allowed.",
-                risk_level="medium",
-            ),
-            ToolSpec(
-                name="search_workspace",
-                description=(
-                    "Search file contents: `query` is a literal substring (ripgrep fixed-string, not regex). "
-                    "Whitespace is normalized to single spaces (do not paste multi-line logs into `query`). "
-                    "Queries `*`, `**`, `.*`, or whitespace-only list files in the workspace."
-                ),
-            ),
-            ToolSpec(
-                name="command_lookup",
-                description=(
-                    "Discover local CLI programs on PATH before using shell_exec. "
-                    "Two modes: (1) `name` — resolve one command via which, optional `include_help` (default true) "
-                    "captures --help or -h from the resolved binary (timeout capped). "
-                    "(2) `prefix` — list executable basenames on PATH starting with `prefix` (optional `max_list`, default 60). "
-                    "Provide either `name` or `prefix` (if both, `name` wins). Does not modify workspace files."
-                ),
-                risk_level="low",
-            ),
-            ToolSpec(
-                name="run_python",
-                description=(
-                    "Execute a Python snippet in the workspace sandbox: writes a temporary `.py` under "
-                    "`.uni-agent/code_run/`, runs `python3` or `python` with cwd=workspace (so imports can use "
-                    "project packages), then deletes the file. Args: `source` (required), optional `timeout_seconds` "
-                    "(1–120, default 30). Stderr is appended on success when non-empty. Non-zero exit raises."
-                ),
-                risk_level="high",
-            ),
-            ToolSpec(
-                name="memory_search",
-                description=(
-                    "Recall saved client-session memory: when an LLM is configured, expands `query` into keywords, "
-                    "matches L0 index lines, then reads matching L1 records and returns a synthesized answer; "
-                    "otherwise substring search on the index. Optional `limit` (1–50) caps rows considered."
-                ),
-            ),
-        ):
+    def register_builtin_tools(
+        self,
+        *,
+        include_delegate_task: bool = True,
+        tool_profile: DelegateToolProfile = "full",
+    ) -> None:
+        specs = list(_core_builtin_specs())
+        if tool_profile == "readonly":
+            specs = [s for s in specs if s.name in _READONLY_TOOL_NAMES]
+        if include_delegate_task and tool_profile == "full":
+            specs.append(_delegate_tool_spec())
+        for tool in specs:
             self.register(tool)
 
     def list_tools(self) -> list[ToolSpec]:

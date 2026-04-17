@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Self
 
+DelegateToolProfile = Literal["full", "readonly"]
+
 from dotenv import load_dotenv
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -43,7 +45,7 @@ class Settings(BaseSettings):
     )
     memory_extract_enabled: bool = Field(
         default=True,
-        description="If true, agent client persists new session turns to memory_dir after idle delay.",
+        description="If true, interactive client persists new session turns to memory_dir after idle delay.",
     )
     memory_idle_extract_seconds: float = Field(
         default=20.0,
@@ -89,6 +91,17 @@ class Settings(BaseSettings):
     run_conclusion_llm: bool = Field(
         default=True,
         description="If true and an LLM is configured, synthesize a final natural-language conclusion after the run.",
+    )
+    delegate_max_failed_rounds: int | None = Field(
+        default=None,
+        description=(
+            "Optional cap on failed replan rounds for **child** runs started by delegate_task. "
+            "Unset → same as orchestrator_max_failed_rounds."
+        ),
+    )
+    delegate_tool_profile: DelegateToolProfile = Field(
+        default="full",
+        description="Tool set for child runs: full (same builtins as parent except delegate) or readonly subset.",
     )
 
     @model_validator(mode="after")

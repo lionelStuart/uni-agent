@@ -62,6 +62,7 @@ class TaskResult(BaseModel):
     error: str | None = None
     orchestrator_failed_rounds: int = 0
     conclusion: str | None = None
+    parent_run_id: str | None = None
 
 
 class TaskRunRecord(BaseModel):

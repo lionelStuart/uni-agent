@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from uni_agent.agent import run_context
 from uni_agent.agent.executor import Executor
 from uni_agent.agent.planner import Planner
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer, fallback_run_conclusion
@@ -86,8 +87,32 @@ class Orchestrator:
         plan_override: list[PlanStep] | None = None,
         *,
         session_context: str | None = None,
+        parent_run_id: str | None = None,
     ) -> TaskResult:
         run_id = self.task_store.next_run_id()
+        rid_tok = run_context.set_run_id(run_id)
+        sess_tok = run_context.set_session_context(session_context)
+        try:
+            return self._run_inner(
+                task,
+                plan_override,
+                run_id=run_id,
+                session_context=session_context,
+                parent_run_id=parent_run_id,
+            )
+        finally:
+            run_context.reset_session_context(sess_tok)
+            run_context.reset_run_id(rid_tok)
+
+    def _run_inner(
+        self,
+        task: str,
+        plan_override: list[PlanStep] | None,
+        *,
+        run_id: str,
+        session_context: str | None,
+        parent_run_id: str | None,
+    ) -> TaskResult:
         skills = self.skill_loader.load_all()
         matched_skills = self.skill_matcher.match(task, skills)
         selected_skills = matched_skills[:2]
@@ -214,6 +239,7 @@ class Orchestrator:
             error=error,
             orchestrator_failed_rounds=failed_rounds,
             conclusion=conclusion,
+            parent_run_id=parent_run_id,
         )
         self.task_store.save(result)
         self._stream(

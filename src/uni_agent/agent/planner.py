@@ -4,6 +4,10 @@ import re
 
 from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
 
+# User explicitly asks for a nested run — short-circuit like ``memory_search`` so
+# ``file_read`` / search heuristics do not win (see system prompt alignment).
+DELEGATE_USER_INTENT_PATTERN = re.compile(r"(?i)(delegate_task|子代理|sub-agent|\bsubagent\b)")
+
 
 class Planner:
     def create_plan(
@@ -70,6 +74,18 @@ class HeuristicPlanner(Planner):
                     tool="memory_search",
                     skill=selected_skill,
                     arguments={"query": mem_q},
+                )
+            ]
+
+        stripped_task = task.strip()
+        if DELEGATE_USER_INTENT_PATTERN.search(stripped_task) and "delegate_task" in allowed_tools:
+            return [
+                PlanStep(
+                    id="step-1",
+                    description="Run nested agent (user explicitly requested sub-agent / delegate_task).",
+                    tool="delegate_task",
+                    skill=selected_skill,
+                    arguments={"task": stripped_task},
                 )
             ]
 

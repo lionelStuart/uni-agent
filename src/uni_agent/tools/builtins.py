@@ -4,6 +4,16 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import Any
+
+from uni_agent.tools.delegate_format import (
+    MAX_DELEGATE_CONTEXT_CHARS,
+    MAX_DELEGATE_SESSION_APPEND_CHARS,
+    MAX_DELEGATE_TASK_CHARS,
+    format_delegate_exception,
+    format_delegate_result,
+    truncate as _truncate_delegate_text,
+)
+from uni_agent.tools.delegation_stream import wrap_child_stream
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -50,6 +60,8 @@ def register_builtin_handlers(
     memory_search_max_hits: int = 12,
     memory_search_model_settings: dict[str, Any] | None = None,
     memory_search_keyword_retries: int = 1,
+    enable_delegate_tool: bool = True,
+    delegate_parent_stream_event: Any | None = None,
 ) -> None:
     resolved_workspace = workspace.resolve()
     resolved_memory_dir = (memory_dir or (resolved_workspace / ".uni-agent" / "memory")).resolve()
@@ -210,14 +222,80 @@ def register_builtin_handlers(
             accept_exit_codes=_RG_OK_NO_MATCH,
         )
 
-    tool_registry.attach_handler("shell_exec", shell_exec)
-    tool_registry.attach_handler("file_read", file_read)
-    tool_registry.attach_handler("file_write", file_write)
-    tool_registry.attach_handler("http_fetch", http_fetch)
-    tool_registry.attach_handler("run_python", run_python)
-    tool_registry.attach_handler("command_lookup", command_lookup)
-    tool_registry.attach_handler("search_workspace", search_workspace)
-    tool_registry.attach_handler("memory_search", memory_search)
+    for _name, _fn in (
+        ("shell_exec", shell_exec),
+        ("file_read", file_read),
+        ("file_write", file_write),
+        ("http_fetch", http_fetch),
+        ("run_python", run_python),
+        ("command_lookup", command_lookup),
+        ("search_workspace", search_workspace),
+        ("memory_search", memory_search),
+    ):
+        if _name in tool_registry._tools:
+            tool_registry.attach_handler(_name, _fn)
+
+    if enable_delegate_tool and "delegate_task" in tool_registry._tools:
+
+        def delegate_task(arguments: dict) -> str:
+            from uni_agent.agent import run_context
+            from uni_agent.bootstrap import build_orchestrator
+            from uni_agent.config.settings import get_settings
+
+            task = arguments.get("task")
+            if not isinstance(task, str) or not task.strip():
+                raise ValueError("delegate_task requires non-empty string 'task'.")
+            ctx_raw = arguments.get("context")
+            context = ctx_raw if isinstance(ctx_raw, str) else ""
+            inc = arguments.get("include_session", False)
+            if not isinstance(inc, bool):
+                raise ValueError("delegate_task 'include_session' must be a boolean.")
+
+            parent_rid = run_context.get_run_id()
+            if not parent_rid:
+                return format_delegate_exception(
+                    RuntimeError(
+                        "delegate_task outside an active orchestrator run (missing parent run_id context)."
+                    ),
+                    parent_run_id=None,
+                )
+
+            parts: list[str] = [_truncate_delegate_text(task.strip(), MAX_DELEGATE_TASK_CHARS)]
+            if context.strip():
+                parts.append(
+                    "\n\n--- Delegated context ---\n"
+                    + _truncate_delegate_text(context.strip(), MAX_DELEGATE_CONTEXT_CHARS)
+                )
+            if inc:
+                sess = run_context.get_session_context()
+                if sess and sess.strip():
+                    parts.append(
+                        "\n\n--- Parent session snapshot ---\n"
+                        + _truncate_delegate_text(sess.strip(), MAX_DELEGATE_SESSION_APPEND_CHARS)
+                    )
+            effective = "".join(parts)
+
+            settings = get_settings()
+            child_max = (
+                settings.delegate_max_failed_rounds
+                if settings.delegate_max_failed_rounds is not None
+                else settings.orchestrator_max_failed_rounds
+            )
+            child_stream = wrap_child_stream(parent_rid, delegate_parent_stream_event)
+
+            try:
+                child_orch = build_orchestrator(
+                    stream_event=child_stream,
+                    enable_delegate_tool=False,
+                    tool_profile=settings.delegate_tool_profile,
+                    max_failed_rounds_override=child_max,
+                )
+                child_result = child_orch.run(effective, parent_run_id=parent_rid)
+                return format_delegate_result(child=child_result, parent_run_id=parent_rid)
+            except Exception as exc:
+                return format_delegate_exception(exc, parent_run_id=parent_rid)
+
+        tool_registry.attach_handler("delegate_task", delegate_task)
 
 
 def _resolve_workspace_path(workspace: Path, raw_path: str) -> Path:

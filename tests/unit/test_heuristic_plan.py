@@ -38,6 +38,18 @@ def test_heuristic_adds_http_fetch_for_urls() -> None:
     assert fetch_steps[0].arguments["url"].startswith("https://example.com/path")
 
 
+def test_heuristic_delegate_task_when_user_explicit() -> None:
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    planner = HeuristicPlanner()
+
+    plan = planner.create_plan("请用 delegate_task 只读 README.md 前几行", [], registry.list_tools())
+
+    assert len(plan) == 1
+    assert plan[0].tool == "delegate_task"
+    assert "README" in plan[0].arguments["task"]
+
+
 def test_heuristic_prefers_du_for_largest_folder_question() -> None:
     registry = ToolRegistry()
     registry.register_builtin_tools()

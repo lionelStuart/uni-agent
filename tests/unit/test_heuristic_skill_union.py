@@ -28,7 +28,9 @@ def test_planner_ignores_skill_allowed_tools_for_palette() -> None:
     ]
 
     planner = HeuristicPlanner()
-    plan = planner.create_plan('shared write the file out.txt with content "hi"', skills, tools)
+    plan = planner.create_plan(
+        'shared search for refs then write the file out.txt with content "hi"', skills, tools
+    )
 
     assert any(step.tool == "file_write" for step in plan)
     assert any(step.tool == "search_workspace" for step in plan)

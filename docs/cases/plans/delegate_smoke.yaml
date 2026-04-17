@@ -1,0 +1,13 @@
+# 演示 delegate_task：保存后执行
+# uni-agent run "smoke delegate" --plan docs/cases/plans/delegate_smoke.yaml --no-stream
+steps:
+  - id: step-1
+    description: 委派子 agent 只读梳理 agent 包内模块
+    tool: delegate_task
+    arguments:
+      task: >-
+        在 src/uni_agent/agent 下用 search_workspace 查找 .py 文件，
+        再 file_read 打开 orchestrator.py 与 planner.py 的文件头（前 40 行），
+        用不超过 8 条要点说明这两个文件各自职责；不要改任何文件。
+      context: >-
+        工作区为仓库根；路径均相对根目录。输出只保留要点，不要贴全文。

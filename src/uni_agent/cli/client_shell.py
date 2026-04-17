@@ -28,24 +28,53 @@ _memory_activity_gen = 0
 _memory_idle_lock = threading.Lock()
 
 
+def _stream_delegation(ev: dict[str, Any]) -> dict[str, Any] | None:
+    d = ev.get("delegation")
+    return d if isinstance(d, dict) else None
+
+
+def _is_sub_agent_stream(ev: dict[str, Any]) -> bool:
+    d = _stream_delegation(ev)
+    return bool(d and d.get("phase") == "child")
+
+
+def _indent_for_stream(ev: dict[str, Any]) -> str:
+    return "    " if _is_sub_agent_stream(ev) else "  "
+
+
 def _human_stream_event(ev: dict[str, Any]) -> None:
     """Pretty progress on stderr (stdout reserved for final JSON blocks in REPL)."""
+    sub = _is_sub_agent_stream(ev)
+    ind = _indent_for_stream(ev)
+    de = _stream_delegation(ev)
+    parent_rid = de.get("parent_run_id") if de else None
+
     t = ev.get("type")
     if t == "run_begin":
-        typer.secho(
-            f">> run_id={ev.get('run_id')}  task={ev.get('task')!r}",
-            fg=typer.colors.CYAN,
-            err=True,
-        )
+        if sub:
+            typer.secho(f"{ind}───────── sub-agent ─────────", fg=typer.colors.BLUE, dim=True, err=True)
+            typer.secho(
+                f"{ind}· parent_run_id={parent_rid}  →  child_run_id={ev.get('run_id')}",
+                fg=typer.colors.BLUE,
+                err=True,
+            )
+            typer.secho(f"{ind}· task={ev.get('task')!r}", dim=True, err=True)
+        else:
+            typer.secho(
+                f">> run_id={ev.get('run_id')}  task={ev.get('task')!r}",
+                fg=typer.colors.CYAN,
+                err=True,
+            )
     elif t == "round_plan":
         steps = ev.get("steps") or []
         parts = [f"{s.get('id')}:{s.get('tool')}" for s in steps]
         src = ev.get("source")
         extra = f" ({src})" if src else ""
-        typer.secho(f"  · round {ev.get('round')}{extra}: " + ", ".join(parts), err=True)
+        label = "sub round" if sub else "round"
+        typer.secho(f"{ind}· {label} {ev.get('round')}{extra}: " + ", ".join(parts), err=True)
     elif t == "plan_empty":
         typer.secho(
-            f"  · planner returned empty plan (failed_rounds={ev.get('failed_rounds_so_far')})",
+            f"{ind}· planner returned empty plan (failed_rounds={ev.get('failed_rounds_so_far')})",
             fg=typer.colors.YELLOW,
             err=True,
         )
@@ -54,38 +83,66 @@ def _human_stream_event(ev: dict[str, Any]) -> None:
         sid = step.get("id", "")
         tool = step.get("tool", "")
         st = step.get("status", "")
-        typer.secho(f"  · step {sid} [{tool}] → {st}", err=True)
+        typer.secho(f"{ind}· step {sid} [{tool}] → {st}", err=True)
         out = (step.get("output") or "").strip()
         if out:
-            head = out.splitlines()[:12]
+            if not sub and tool == "delegate_task":
+                typer.secho(
+                    f"{ind}  (tool return text; nested sub-agent activity is shown above between "
+                    "sub-agent banners)",
+                    fg=typer.colors.BLUE,
+                    dim=True,
+                    err=True,
+                )
+                max_lines, max_chars = 8, 1200
+            else:
+                max_lines, max_chars = 12, 2000
+            head = out.splitlines()[:max_lines]
             body = "\n".join(head)
-            if len(out.splitlines()) > 12 or len(body) > 2000:
-                body = body[:2000] + "\n... [truncated]"
-            typer.secho(body, dim=True, err=True)
+            if len(out.splitlines()) > max_lines or len(body) > max_chars:
+                body = body[:max_chars] + "\n... [truncated]"
+            for line in body.splitlines():
+                typer.secho(f"{ind}  {line}", dim=True, err=True)
         errd = step.get("error_detail")
         if errd:
-            typer.secho(f"    error: {errd}", fg=typer.colors.RED, err=True)
+            typer.secho(f"{ind}    error: {errd}", fg=typer.colors.RED, err=True)
     elif t == "round_completed":
-        typer.secho(f"  · round {ev.get('round')} completed", fg=typer.colors.GREEN, err=True)
+        msg = f"{ind}· sub round {ev.get('round')} completed" if sub else f"{ind}· round {ev.get('round')} completed"
+        typer.secho(msg, fg=typer.colors.GREEN, err=True)
     elif t == "round_failed":
         typer.secho(
-            f"  · round {ev.get('round')} failed (replan; "
+            f"{ind}· round {ev.get('round')} failed (replan; "
             f"failed_rounds={ev.get('failed_rounds_so_far')}/{ev.get('max_failed_rounds')})",
             fg=typer.colors.YELLOW,
             err=True,
         )
     elif t == "conclusion_begin":
-        typer.secho("  · generating conclusion…", dim=True, err=True)
+        typer.secho(f"{ind}· generating conclusion…", dim=True, err=True)
     elif t == "conclusion_done":
         concl = ev.get("conclusion") or ""
-        typer.secho("\n── conclusion ──", fg=typer.colors.MAGENTA, err=True)
-        typer.secho(concl, err=True)
+        if sub:
+            typer.secho(f"\n{ind}── sub-agent conclusion ──", fg=typer.colors.BLUE, err=True)
+        else:
+            typer.secho("\n── conclusion ──", fg=typer.colors.MAGENTA, err=True)
+        for line in (concl or "").splitlines() or [""]:
+            typer.secho(f"{ind}{line}", err=True)
     elif t == "run_end":
-        typer.secho(
-            f"\n■ finished status={ev.get('status')} run_id={ev.get('run_id')}\n",
-            bold=True,
-            err=True,
-        )
+        rid = ev.get("run_id")
+        st = ev.get("status")
+        if sub:
+            typer.secho(
+                f"\n{ind}■ sub-agent finished status={st} run_id={rid}\n",
+                fg=typer.colors.BLUE,
+                bold=True,
+                err=True,
+            )
+            typer.secho(f"{ind}  (parent run continues)\n", dim=True, err=True)
+        else:
+            typer.secho(
+                f"\n■ finished status={st} run_id={rid}\n",
+                bold=True,
+                err=True,
+            )
     else:
         typer.secho(json.dumps(ev, ensure_ascii=False), err=True)
 
@@ -94,7 +151,7 @@ def _print_help() -> None:
     typer.echo(
         """
 Commands:
-  <text>          Run as a task (same as agent run).
+  <text>          Run as a task (same as uni-agent run).
   load <id>       Load session by id or id prefix (from session store).
   new             Start a new session (current one saved first if it has entries).
   sessions        List recent session files.
@@ -105,7 +162,7 @@ Commands:
   help            This help.
   exit / quit     Leave the client.
 
-Environment matches ``agent run`` (see UNI_AGENT_* in settings).
+Environment matches ``uni-agent run`` (see UNI_AGENT_* in settings).
 """.strip()
     )
 
@@ -296,7 +353,7 @@ def run_interactive_client(
 
         task = line
         started = datetime.now(timezone.utc).isoformat()
-        from uni_agent.cli.main import build_orchestrator
+        from uni_agent.bootstrap import build_orchestrator
 
         orchestrator = build_orchestrator(stream_event=stream_fn)
         ctx = build_session_context_for_planner(session.entries)
