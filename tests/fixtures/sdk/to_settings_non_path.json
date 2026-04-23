@@ -1,0 +1,10 @@
+{
+  "planner_backend": "pydantic_ai",
+  "model_name": "openai:custom",
+  "openai_base_url": "https://example.invalid/v1",
+  "openai_api_key": "test-key-snapshot",
+  "global_system_prompt": "GSP snapshot line.",
+  "planner_instructions": "PI snapshot line.",
+  "conclusion_system_prompt": "CSP snapshot line.",
+  "run_conclusion_llm": false
+}

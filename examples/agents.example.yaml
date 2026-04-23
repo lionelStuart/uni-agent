@@ -1,0 +1,20 @@
+# Example multi-agent manifest for load_agent_configs_from_file / load_agent_registry_from_file.
+# Paths are relative to this file's directory unless absolute.
+version: 1
+
+agents:
+  - id: agent-readonly
+    name: ReadonlyDemo
+    description: Heuristic read-only smoke (no planning LLM required).
+    workspace: "."
+    skills_dir: "skills"
+    storage_namespace: "example-multi-readonly"
+    planner_backend: heuristic
+
+  - id: agent-alt
+    name: AltSlot
+    description: Second slot; same workspace/skills for demo only (use different skills_dir in production).
+    workspace: "."
+    skills_dir: "skills"
+    storage_namespace: "example-multi-alt"
+    planner_backend: heuristic

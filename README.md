@@ -8,6 +8,8 @@
 - **通用 Sandbox**：`LocalSandbox`（命令白名单、超时、可选交互批准）
 - **Skills**：本地 `skills/<name>/` 自动加载（**每层子目录一项 skill**）：优先 **`SKILL.md`**（YAML frontmatter + 正文，对齐 Codex / Claude Code / Cursor）；否则 **`skill.yaml`** + `entry` 指向的 Markdown。可选 **`references/`、`reference.md`、`examples.md`** 与 **`scripts/`**，合并为 `instruction_text`；小参考文件可内联进提示。`UNI_AGENT_SKILLS_DIR` 对应 `skills_dir`，加载器使用 **`UNI_AGENT_WORKSPACE`** 计算 `file_read` 用的相对路径
 
+**进程内 SDK**（可编程接入）：`from uni_agent.sdk import AgentConfig, create_client, AgentRegistry` — 用 `workspace` + `skills_dir`、人设与 `to_settings()` 对接 `build_orchestrator`，支持 `on_event=` 流式（与 CLI `--stream` 同一套 NDJSON 事件，含子代理 `delegation`）；`AgentClient.orchestrator` 为同一装配得到的 `Orchestrator` 逃生舱（见 [sdk-runtime](docs/sdk-runtime.md)）。见 [开发文档 §4.9–§4.10](docs/开发文档.md)、[流式 `docs/sdk-streaming.md`](docs/sdk-streaming.md)、[进度 §2.1](docs/进度文档.md#21-sdk-分轮工作安排可编程接入--多-agent--流式)；可运行示例 [`examples/sdk_minimal.py`](examples/sdk_minimal.py)、[多 agent 清单与 `sdk_multi_agent.py`](examples/agents.example.yaml)、[`examples/sdk_concurrency.py`](examples/sdk_concurrency.py)、[`examples/sdk_orchestrator_escape.py`](examples/sdk_orchestrator_escape.py)。
+
 详细设计见：
 
 - [设计文档](docs/设计文档.md)
@@ -15,6 +17,10 @@
 - [进度文档](docs/进度文档.md)
 - [Skills 目录与 SKILL.md 说明](docs/Skills目录与SKILL说明.md)
 - [Agent 运行流程与领域模型](docs/Agent运行流程与领域模型.md)
+- [SDK 流式事件（NDJSON）](docs/sdk-streaming.md)
+- [多 agent 清单（YAML/JSON）](docs/sdk-agents.md)
+- [SDK 并发与资源](docs/sdk-concurrency.md)
+- [SDK 与运行时（`build_orchestrator`、`.orchestrator`）](docs/sdk-runtime.md)
 
 ## 能力摘要（当前实现）
 
@@ -37,6 +43,8 @@
 ## 开发约束
 
 实现与文档不一致时，**先改文档再改代码**。协作流程见 [进度文档](docs/进度文档.md) 中的记录规范。
+
+**迭代收尾**：合入前检查 **`tests/`** 与 **`examples/`** 是否需随功能变更而更新（见 [进度文档 §2.1](docs/进度文档.md#21-sdk-分轮工作安排可编程接入--多-agent--流式) 的「每轮收尾」说明）。
 
 ## 本地运行
 
