@@ -1,4 +1,4 @@
-"""Built-in system prompts for LLM-backed agent components (planner, run conclusion).
+"""Built-in system prompts for LLM-backed agent components (planner, run conclusion, goal check).
 
 Override per role via settings; optional global prefix is prepended to each effective prompt.
 """
@@ -51,6 +51,17 @@ DEFAULT_PLANNER_SYSTEM_PROMPT = (
     '{"command": ["echo", "<brief safe reply>"]} — keep the reply short and on-topic.'
 )
 
+DEFAULT_GOAL_CHECK_SYSTEM_PROMPT = (
+    "You decide whether a **local coding agent run** (tool steps, all currently completed) has "
+    "already achieved the **user's stated task** well enough, based only on the task text and the "
+    "execution log you receive. Be strict: if the user asked for specific files, data, or actions "
+    "and the log shows the wrong file, empty results, a placeholder, or a trivial echo where real "
+    "work was required, set goal_satisfied to false. "
+    "For genuine small-talk or a pure greeting with an echo response that matches a trivial request, goal_satisfied may be true. "
+    "If goal_satisfied is false, planner_brief MUST give concrete, short instructions for the next plan "
+    "(what to read, what to run, what to search for — not vague advice). Use the same language as the user task for reason and brief when it is Chinese or English."
+)
+
 DEFAULT_CONCLUSION_SYSTEM_PROMPT = (
     "You write a clear execution conclusion for the user who ran a local agent. "
     "Use the same language as the task when it is clearly Chinese or English; otherwise match the task. "
@@ -92,4 +103,13 @@ def effective_conclusion_instructions(
     global_prefix: str | None,
 ) -> str:
     base = _strip_optional(override) or DEFAULT_CONCLUSION_SYSTEM_PROMPT
+    return with_global_prefix(base, global_prefix)
+
+
+def effective_goal_check_instructions(
+    *,
+    override: str | None,
+    global_prefix: str | None,
+) -> str:
+    base = _strip_optional(override) or DEFAULT_GOAL_CHECK_SYSTEM_PROMPT
     return with_global_prefix(base, global_prefix)

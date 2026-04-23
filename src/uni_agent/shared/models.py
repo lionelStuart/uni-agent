@@ -61,6 +61,10 @@ class TaskResult(BaseModel):
     output: str = ""
     error: str | None = None
     orchestrator_failed_rounds: int = 0
+    goal_check_mismatch_rounds: int = Field(
+        default=0,
+        description="Post-batch goal checks that reported not satisfied (each may trigger a re-plan).",
+    )
     conclusion: str | None = None
     parent_run_id: str | None = None
 

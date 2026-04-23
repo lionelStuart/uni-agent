@@ -76,6 +76,7 @@ class PydanticAIPlanner(Planner):
         *,
         prior_context: str | None = None,
         session_context: str | None = None,
+        outcome_feedback: str | None = None,
     ) -> list[PlanStep]:
         if not self._provider.is_available():
             return self._fallback.create_plan(
@@ -84,34 +85,37 @@ class PydanticAIPlanner(Planner):
                 available_tools,
                 prior_context=prior_context,
                 session_context=session_context,
+                outcome_feedback=outcome_feedback,
             )
 
         tool_names_set = {tool.name for tool in available_tools}
         allowed = self._resolve_allowed_tools(selected_skills, tool_names_set)
-        mem_q = self._fallback._memory_search_query(task.strip())
-        if mem_q is not None and "memory_search" in allowed:
-            selected_skill = selected_skills[0].name if selected_skills else None
-            return [
-                PlanStep(
-                    id="step-1",
-                    description=f"Search saved session memory for: {mem_q[:120]!r}.",
-                    tool="memory_search",
-                    skill=selected_skill,
-                    arguments={"query": mem_q},
-                )
-            ]
-        stripped_task = task.strip()
-        if DELEGATE_USER_INTENT_PATTERN.search(stripped_task) and "delegate_task" in allowed:
-            selected_skill = selected_skills[0].name if selected_skills else None
-            return [
-                PlanStep(
-                    id="step-1",
-                    description="Run nested agent (user explicitly requested sub-agent / delegate_task).",
-                    tool="delegate_task",
-                    skill=selected_skill,
-                    arguments={"task": stripped_task},
-                )
-            ]
+        skip_shortcuts = bool(prior_context or outcome_feedback)
+        if not skip_shortcuts:
+            mem_q = self._fallback._memory_search_query(task.strip())
+            if mem_q is not None and "memory_search" in allowed:
+                selected_skill = selected_skills[0].name if selected_skills else None
+                return [
+                    PlanStep(
+                        id="step-1",
+                        description=f"Search saved session memory for: {mem_q[:120]!r}.",
+                        tool="memory_search",
+                        skill=selected_skill,
+                        arguments={"query": mem_q},
+                    )
+                ]
+            stripped_task = task.strip()
+            if DELEGATE_USER_INTENT_PATTERN.search(stripped_task) and "delegate_task" in allowed:
+                selected_skill = selected_skills[0].name if selected_skills else None
+                return [
+                    PlanStep(
+                        id="step-1",
+                        description="Run nested agent (user explicitly requested sub-agent / delegate_task).",
+                        tool="delegate_task",
+                        skill=selected_skill,
+                        arguments={"task": stripped_task},
+                    )
+                ]
         tool_lines = "\n".join(f"- {t.name}: {t.description}" for t in available_tools if t.name in allowed)
         user_prompt = f"Task:\n{task}\n\n"
         if session_context:
@@ -123,6 +127,12 @@ class PydanticAIPlanner(Planner):
             user_prompt += (
                 "Prior execution log (revise the plan; avoid repeating steps that already failed the same way):\n"
                 f"{prior_context}\n\n"
+            )
+        if outcome_feedback:
+            user_prompt += (
+                "Outcome review (previous batch completed but the task may not be fully satisfied; "
+                "revise the plan to meet the user task):\n"
+                f"{outcome_feedback}\n\n"
             )
         skill_ctx = planner_skill_context(selected_skills)
         if skill_ctx:
@@ -144,6 +154,7 @@ class PydanticAIPlanner(Planner):
                 available_tools,
                 prior_context=prior_context,
                 session_context=session_context,
+                outcome_feedback=outcome_feedback,
             )
         return normalized
 

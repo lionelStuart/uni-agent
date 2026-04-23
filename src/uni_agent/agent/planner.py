@@ -18,6 +18,7 @@ class Planner:
         *,
         prior_context: str | None = None,
         session_context: str | None = None,
+        outcome_feedback: str | None = None,
     ) -> list[PlanStep]:
         raise NotImplementedError
 
@@ -53,6 +54,7 @@ class HeuristicPlanner(Planner):
         *,
         prior_context: str | None = None,
         session_context: str | None = None,
+        outcome_feedback: str | None = None,
     ) -> list[PlanStep]:
         effective_task = task
         if session_context:
@@ -61,33 +63,41 @@ class HeuristicPlanner(Planner):
             )
         if prior_context:
             effective_task = f"{effective_task}\n\n--- Prior execution log (this run) ---\n{prior_context}"
+        if outcome_feedback:
+            effective_task = (
+                f"{effective_task}\n\n"
+                "--- Outcome review (previous batch completed but task may be incomplete; revise the plan) ---\n"
+                f"{outcome_feedback}"
+            )
         tool_names = {tool.name for tool in available_tools}
         allowed_tools = self._resolve_allowed_tools(selected_skills, tool_names)
         selected_skill = selected_skills[0].name if selected_skills else None
 
-        mem_q = self._memory_search_query(task.strip())
-        if mem_q is not None and "memory_search" in allowed_tools:
-            return [
-                PlanStep(
-                    id="step-1",
-                    description=f"Search saved session memory for: {mem_q[:120]!r}.",
-                    tool="memory_search",
-                    skill=selected_skill,
-                    arguments={"query": mem_q},
-                )
-            ]
+        skip_shortcuts = bool(prior_context or outcome_feedback)
+        if not skip_shortcuts:
+            mem_q = self._memory_search_query(task.strip())
+            if mem_q is not None and "memory_search" in allowed_tools:
+                return [
+                    PlanStep(
+                        id="step-1",
+                        description=f"Search saved session memory for: {mem_q[:120]!r}.",
+                        tool="memory_search",
+                        skill=selected_skill,
+                        arguments={"query": mem_q},
+                    )
+                ]
 
-        stripped_task = task.strip()
-        if DELEGATE_USER_INTENT_PATTERN.search(stripped_task) and "delegate_task" in allowed_tools:
-            return [
-                PlanStep(
-                    id="step-1",
-                    description="Run nested agent (user explicitly requested sub-agent / delegate_task).",
-                    tool="delegate_task",
-                    skill=selected_skill,
-                    arguments={"task": stripped_task},
-                )
-            ]
+            stripped_task = task.strip()
+            if DELEGATE_USER_INTENT_PATTERN.search(stripped_task) and "delegate_task" in allowed_tools:
+                return [
+                    PlanStep(
+                        id="step-1",
+                        description="Run nested agent (user explicitly requested sub-agent / delegate_task).",
+                        tool="delegate_task",
+                        skill=selected_skill,
+                        arguments={"task": stripped_task},
+                    )
+                ]
 
         steps: list[PlanStep] = []
         write_spec = self._extract_file_write(effective_task)

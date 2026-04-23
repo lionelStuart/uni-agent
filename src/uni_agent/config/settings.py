@@ -92,6 +92,24 @@ class Settings(BaseSettings):
         default=True,
         description="If true and an LLM is configured, synthesize a final natural-language conclusion after the run.",
     )
+    plan_goal_check_enabled: bool = Field(
+        default=False,
+        description=(
+            "If true and an LLM is configured, after each batch of steps that all **completed**, run a goal check; "
+            "if the task is not yet satisfied, inject feedback into the next plan (re-plan loop, capped by "
+            "plan_goal_check_max_replan_rounds)."
+        ),
+    )
+    plan_goal_check_max_replan_rounds: int = Field(
+        default=3,
+        ge=0,
+        le=20,
+        description="Max number of re-plan attempts after a goal check reports not satisfied (0 = no extra re-plans on goal miss).",
+    )
+    plan_goal_check_system_prompt: str | None = Field(
+        default=None,
+        description="Optional override for the goal-check LLM system prompt (default: DEFAULT_GOAL_CHECK_SYSTEM_PROMPT).",
+    )
     delegate_max_failed_rounds: int | None = Field(
         default=None,
         description=(

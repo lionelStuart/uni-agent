@@ -7,6 +7,7 @@
 - ``round_completed`` / ``round_failed`` — batch outcome
 - ``conclusion_begin`` / ``conclusion_done`` — final summary text
 - ``run_end`` — status, run_id, orchestrator_failed_rounds
+- ``goal_check`` (optional) — after a fully successful step batch, LLM may report ``satisfied`` / ``reason`` / ``planner_brief``; on error, may include ``error`` instead
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from typing import Any
 from uni_agent.agent import run_context
 from uni_agent.agent.executor import Executor
 from uni_agent.agent.planner import Planner
+from uni_agent.agent.goal_check import GoalCheckSynthesizer
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer, fallback_run_conclusion
 from uni_agent.observability.task_store import TaskStore
 from uni_agent.shared.models import PlanStep, TaskResult, TaskStatus
@@ -66,6 +68,8 @@ class Orchestrator:
         max_failed_rounds: int = 5,
         conclusion_synthesizer: RunConclusionSynthesizer | None = None,
         stream_event: StreamEventCallback | None = None,
+        goal_check: GoalCheckSynthesizer | None = None,
+        plan_goal_check_max_replan_rounds: int = 0,
     ):
         self.skill_loader = skill_loader
         self.tool_registry = tool_registry
@@ -76,6 +80,8 @@ class Orchestrator:
         self.max_failed_rounds = max(1, max_failed_rounds)
         self._conclusion_synthesizer = conclusion_synthesizer
         self._stream_event = stream_event
+        self._goal_check = goal_check
+        self._plan_goal_check_max_replan_rounds = max(0, plan_goal_check_max_replan_rounds)
 
     def _stream(self, event: dict[str, Any]) -> None:
         if self._stream_event is not None:
@@ -127,6 +133,8 @@ class Orchestrator:
             }
         )
 
+        goal_exhausted = False
+        goal_mismatch_count = 0
         if plan_override is not None:
             ov_summaries = [
                 {"id": s.id, "tool": s.tool, "description": s.description} for s in plan_override
@@ -146,6 +154,7 @@ class Orchestrator:
             accumulated: list[PlanStep] = []
             failed_rounds = 0
             round_idx = 0
+            outcome_feedback: str | None = None
 
             while True:
                 prior = _format_prior_context(accumulated) if accumulated else None
@@ -155,7 +164,9 @@ class Orchestrator:
                     available_tools,
                     prior_context=prior,
                     session_context=session_context,
+                    outcome_feedback=outcome_feedback,
                 )
+                outcome_feedback = None
 
                 if not plan:
                     failed_rounds += 1
@@ -184,6 +195,44 @@ class Orchestrator:
 
                 if all(step.status == TaskStatus.COMPLETED for step in batch):
                     self._stream({"type": "round_completed", "round": round_idx})
+                    if self._goal_check is not None and self._goal_check.is_available():
+                        try:
+                            gc = self._goal_check.check(task, accumulated, session_context)
+                        except Exception as exc:  # noqa: BLE001 — surface as stream + safe exit
+                            self._stream(
+                                {
+                                    "type": "goal_check",
+                                    "round": round_idx,
+                                    "satisfied": None,
+                                    "error": str(exc)[:1_200],
+                                }
+                            )
+                            break
+                        self._stream(
+                            {
+                                "type": "goal_check",
+                                "round": round_idx,
+                                "satisfied": gc.goal_satisfied,
+                                "reason": (gc.reason or "")[:2_000],
+                            }
+                        )
+                        if gc.goal_satisfied:
+                            break
+                        goal_mismatch_count += 1
+                        if goal_mismatch_count > self._plan_goal_check_max_replan_rounds:
+                            goal_exhausted = True
+                            break
+                        parts: list[str] = []
+                        if (gc.reason or "").strip():
+                            parts.append(f"Review: {gc.reason.strip()}")
+                        if (gc.planner_brief or "").strip():
+                            parts.append(f"Planner focus:\n{gc.planner_brief.strip()}")
+                        outcome_feedback = (
+                            "\n\n".join(parts)
+                            if parts
+                            else "Re-plan: the previous successful batch did not yet satisfy the user task; use different or additional tools."
+                        )
+                        continue
                     break
 
                 failed_rounds += 1
@@ -199,7 +248,11 @@ class Orchestrator:
                     break
 
             executed_plan = accumulated
-            success = bool(executed_plan) and all(s.status == TaskStatus.COMPLETED for s in executed_plan)
+            success = (
+                bool(executed_plan)
+                and all(s.status == TaskStatus.COMPLETED for s in executed_plan)
+                and not goal_exhausted
+            )
 
         failed_step = None
         if not success:
@@ -210,6 +263,12 @@ class Orchestrator:
 
         output = "\n\n".join(step.output for step in executed_plan if step.output)
         error: str | None = (failed_step.error_detail or failed_step.output) if failed_step else None
+        if not success and error is None and goal_exhausted:
+            error = (
+                "Goal check: the task was not considered satisfied after "
+                f"{self._plan_goal_check_max_replan_rounds} re-plan round(s) following completed tool steps. "
+                f"Last review rounds (not satisfied): {goal_mismatch_count}."
+            )
         if not success and error is None:
             error = (
                 f"Stopped after {failed_rounds} failed replan round(s) "
@@ -238,6 +297,7 @@ class Orchestrator:
             output=output,
             error=error,
             orchestrator_failed_rounds=failed_rounds,
+            goal_check_mismatch_rounds=goal_mismatch_count,
             conclusion=conclusion,
             parent_run_id=parent_run_id,
         )

@@ -38,6 +38,18 @@ def test_heuristic_adds_http_fetch_for_urls() -> None:
     assert fetch_steps[0].arguments["url"].startswith("https://example.com/path")
 
 
+def test_heuristic_skips_memory_shortcut_when_outcome_feedback() -> None:
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    planner = HeuristicPlanner()
+    with_memory = planner.create_plan("我是谁", [], registry.list_tools())
+    assert with_memory[0].tool == "memory_search"
+    with_feedback = planner.create_plan(
+        "我是谁", [], registry.list_tools(), outcome_feedback="Previous batch did not satisfy the task."
+    )
+    assert with_feedback[0].tool != "memory_search"
+
+
 def test_heuristic_delegate_task_when_user_explicit() -> None:
     registry = ToolRegistry()
     registry.register_builtin_tools()

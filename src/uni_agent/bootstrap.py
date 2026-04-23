@@ -6,6 +6,7 @@ from uni_agent.agent.llm import EnvLLMProvider
 from uni_agent.agent.orchestrator import Orchestrator, StreamEventCallback
 from uni_agent.agent.planner import HeuristicPlanner
 from uni_agent.agent.pydantic_planner import PydanticAIPlanner
+from uni_agent.agent.goal_check import GoalCheckSynthesizer
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer
 from uni_agent.config.settings import (
     DelegateToolProfile,
@@ -121,6 +122,15 @@ def build_orchestrator(
             conclusion_system_prompt=settings.conclusion_system_prompt,
             global_system_prompt=settings.global_system_prompt,
         )
+    goal_check: GoalCheckSynthesizer | None = None
+    if settings.plan_goal_check_enabled and provider.is_available():
+        goal_check = GoalCheckSynthesizer(
+            provider=provider,
+            model_settings=model_settings,
+            retries=0,
+            goal_check_system_prompt=settings.plan_goal_check_system_prompt,
+            global_system_prompt=settings.global_system_prompt,
+        )
     max_rounds = (
         max_failed_rounds_override
         if max_failed_rounds_override is not None
@@ -135,4 +145,6 @@ def build_orchestrator(
         max_failed_rounds=max_rounds,
         conclusion_synthesizer=conclusion_syn,
         stream_event=stream_event,
+        goal_check=goal_check,
+        plan_goal_check_max_replan_rounds=settings.plan_goal_check_max_replan_rounds,
     )
