@@ -19,7 +19,7 @@ from uni_agent.tools.delegate_format import (
 )
 from uni_agent.tools.delegation_stream import wrap_child_stream
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 from uni_agent.agent.llm import LLMProvider
@@ -40,6 +40,10 @@ _MAX_RUN_PYTHON_TIMEOUT = 120
 _DDG_HTML_ENDPOINT = "https://html.duckduckgo.com/html"
 _DDG_RESULT_MAX = 10
 _DDG_SAFE_SEARCH_PARAM = {"strict": "1", "moderate": "-1", "off": "-2"}
+_WEB_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+)
 _DDG_RESULT_LINK_RE = re.compile(
     r'<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")(?P<attrs>[^>]*)>(?P<title>[\s\S]*?)</a>',
     re.IGNORECASE,
@@ -123,12 +127,10 @@ def _normalize_html_text(html: str) -> str:
 def _decode_duckduckgo_url(raw_url: str) -> str:
     try:
         normalized = f"https:{raw_url}" if raw_url.startswith("//") else raw_url
-        uddg = urlparse(normalized).query
-        if uddg:
-            params = dict(
-                part.split("=", 1) for part in uddg.split("&") if "=" in part
-            )
-            target = params.get("uddg")
+        parsed = urlparse(normalized)
+        params = parse_qs(parsed.query)
+        for key in ("uddg", "u", "u3"):
+            target = params.get(key, [None])[0]
             if target:
                 from urllib.parse import unquote
 
@@ -171,7 +173,8 @@ def _parse_duckduckgo_html(html: str) -> list[dict[str, str]]:
         title = _decode_html_entities(_strip_html(raw_title))
         url = _decode_duckduckgo_url(_decode_html_entities(raw_url))
         snippet = _decode_html_entities(_strip_html(raw_snippet))
-        if title and url:
+        host = urlparse(url).hostname or ""
+        if title and url and host not in {"duckduckgo.com", "www.duckduckgo.com"}:
             results.append({"title": title, "url": url, "snippet": snippet})
     return results
 
@@ -235,7 +238,7 @@ def register_builtin_handlers(
         assert_public_http_url(url, allow_private_networks=http_fetch_allow_private_networks)
         parsed = urlparse(url)
         assert_http_fetch_host_allowlist(parsed.hostname, http_fetch_allowed_hosts)
-        req = Request(url, headers={"User-Agent": "uni-agent/0.1"}, method="GET")
+        req = Request(url, headers={"User-Agent": _WEB_USER_AGENT}, method="GET")
         try:
             with urlopen(req, timeout=http_fetch_timeout_seconds, context=ssl_context) as resp:
                 body = resp.read(http_fetch_max_bytes + 1)
@@ -292,10 +295,7 @@ def register_builtin_handlers(
         req = Request(
             url,
             headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                )
+                "User-Agent": _WEB_USER_AGENT
             },
             method="GET",
         )

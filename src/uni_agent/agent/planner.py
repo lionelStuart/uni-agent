@@ -24,6 +24,15 @@ class Planner:
 
 
 class HeuristicPlanner(Planner):
+    _CURATED_CN_NEWS_URLS: tuple[str, ...] = (
+        "https://www.chinanews.com.cn/china.shtml",
+        "https://news.cctv.com/china/",
+        "https://www.thepaper.cn/",
+    )
+    _CURATED_CN_AI_NEWS_URLS: tuple[str, ...] = (
+        "https://www.aibase.com/zh/daily",
+        "https://news.softunis.com/ai",
+    )
     _MEMORY_SEARCH_EN = re.compile(r"(?i)^memory\s+search(?:\s+for)?\s+(.+)$")
     _MEMORY_SEARCH_CN = re.compile(r"(?:^|\s)(?:搜索|查找|查询)\s*记忆\s*[：:]\s*(.+)$")
     # Prefer persisted session memory over generic chat (planner LLM otherwise tends to shell_exec+echo).
@@ -37,11 +46,35 @@ class HeuristicPlanner(Planner):
         r"(?i)(?:^|\b)(?:web\s+search|search\s+the\s+web|search\s+web|look\s+up|search\s+online)\b"
     )
     _WEB_SEARCH_CN = re.compile(r"(联网搜索|网页搜索|搜索网页|上网查|在线搜索|查官网|搜官网)")
-    _WEB_RESULT_URL_RE = re.compile(r'"url"\s*:\s*"(?P<url>https?://[^"]+)"', re.IGNORECASE)
-    _CONTENT_SEEK_EN = re.compile(
-        r"(?i)\b(news|headline|headlines|latest|today|recent|current|summary|summarize|what happened)\b"
+    _PUBLIC_WEB_NEWS_EN = re.compile(
+        r"(?i)(?:\b(?:hot|top|trending|breaking|latest|recent|current)\s+(?:news|headlines?)\b|"
+        r"\b(?:today(?:'s)?\s+(?:news|headlines?)|(?:news|headlines?)\s+(?:today|now|latest))\b)"
     )
-    _CONTENT_SEEK_CN = re.compile(r"(新闻|头条|最新|今天|今日|近况|发生了什么|总结|摘要)")
+    _PUBLIC_WEB_NEWS_CN = re.compile(
+        r"(今天的?(?:热点|热搜|新闻|头条)|今日(?:热点|热搜|新闻|头条)|热点新闻|热搜新闻|最新新闻|新闻热点|今日头条|今天头条)"
+    )
+    _WEB_RESULT_URL_RE = re.compile(r'"url"\s*:\s*"(?P<url>https?://[^"]+)"', re.IGNORECASE)
+    _WEB_RESULT_ENTRY_RE = re.compile(
+        r'\{\s*"title"\s*:\s*"(?P<title>[^"]+)"\s*,\s*"url"\s*:\s*"(?P<url>https?://[^"]+)"\s*,\s*"snippet"\s*:\s*"(?P<snippet>[^"]*)"',
+        re.IGNORECASE,
+    )
+    _CONTENT_SEEK_EN = re.compile(
+        r"(?i)\b("
+        r"news|headline|headlines|latest|today|recent|current|summary|summarize|what happened|"
+        r"docs?|documentation|api|reference|tutorial|guide|install|usage|how to|what is|official"
+        r")\b"
+    )
+    _CONTENT_SEEK_CN = re.compile(r"(新闻|头条|最新|今天|今日|近况|发生了什么|总结|摘要|文档|官网|教程|指南|说明|用法|API|是什么|如何)")
+    _DOC_LOOKUP_EN = re.compile(r"(?i)\b(docs?|documentation|api|reference|tutorial|guide|install|usage)\b")
+    _DOC_LOOKUP_CN = re.compile(r"(文档|教程|指南|说明|用法|API)")
+    _OFFICIAL_SITE_EN = re.compile(r"(?i)\b(official\s+(?:site|website)|homepage)\b")
+    _RECENCY_HINT_EN = re.compile(r"(?i)\b(today|latest|breaking|recent|current|minutes?\s+ago|hours?\s+ago)\b")
+    _RECENCY_HINT_CN = re.compile(r"(今天|今日|最新|刚刚|分钟前|小时前|刚发布|快讯|滚动)")
+    _NEWS_LIST_HINT_EN = re.compile(r"(?i)\b(top stories|headline|headlines|latest news|breaking news|live updates?)\b")
+    _NEWS_LIST_HINT_CN = re.compile(r"(滚动|头条|热榜|热点|快讯|要闻|最新资讯)")
+    _DOC_PATH_HINT = re.compile(r"(?i)/(?:docs?|doc|api|reference|tutorial|guide|learn)(?:/|$)")
+    _HOMEPAGE_PENALTY_EN = re.compile(r"(?i)\b(home|homepage|official site|official website)\b")
+    _HOMEPAGE_PENALTY_CN = re.compile(r"(官网|首页)")
     _PATH_PATTERN = re.compile(r"(?P<path>[\w./-]+\.[A-Za-z0-9]+)")
     _URL_PATTERN = re.compile(r"(https?://[^\s\"'<>]+)", re.IGNORECASE)
     _WRITE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -132,6 +165,18 @@ class HeuristicPlanner(Planner):
                     arguments={"url": url},
                 )
                 for idx, url in enumerate(follow_up_urls, start=1)
+            ]
+        fallback_urls = self._preferred_direct_http_fetch_urls(task, prior_context)
+        if fallback_urls and "http_fetch" in allowed_tools:
+            return [
+                PlanStep(
+                    id=f"step-{idx}",
+                    description=f"Fetch remote content from {url}.",
+                    tool="http_fetch",
+                    skill=selected_skill,
+                    arguments={"url": url},
+                )
+                for idx, url in enumerate(fallback_urls, start=1)
             ]
         write_spec = self._extract_file_write(effective_task)
         fetch_url = self._extract_fetch_url(effective_task) if self._needs_http_fetch(effective_task) else None
@@ -249,19 +294,90 @@ class HeuristicPlanner(Planner):
     def _extract_follow_up_fetch_urls(self, task: str, prior_context: str | None) -> list[str]:
         if not prior_context or "web_search completed" not in prior_context:
             return []
-        if not (self._CONTENT_SEEK_EN.search(task) or self._CONTENT_SEEK_CN.search(task)):
+        limit = self._follow_up_fetch_limit(task)
+        if limit <= 0:
             return []
-        urls: list[str] = []
+        ranked = self._rank_web_result_candidates(task, prior_context)
+        return [url for url, _score in ranked[:limit]]
+
+    def _rank_web_result_candidates(self, task: str, prior_context: str) -> list[tuple[str, int]]:
+        scored: list[tuple[str, int]] = []
         seen: set[str] = set()
-        for match in self._WEB_RESULT_URL_RE.finditer(prior_context):
+        for match in self._WEB_RESULT_ENTRY_RE.finditer(prior_context):
+            title = match.group("title").strip()
             url = match.group("url").strip()
+            snippet = match.group("snippet").strip()
             if url in seen:
                 continue
             seen.add(url)
-            urls.append(url)
-            if len(urls) >= 3:
-                break
-        return urls
+            scored.append((url, self._score_web_result(task, title, url, snippet)))
+        if not scored:
+            for match in self._WEB_RESULT_URL_RE.finditer(prior_context):
+                url = match.group("url").strip()
+                if url in seen:
+                    continue
+                seen.add(url)
+                scored.append((url, 0))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored
+
+    def _score_web_result(self, task: str, title: str, url: str, snippet: str) -> int:
+        text = f"{title}\n{snippet}"
+        score = 0
+        if self._PUBLIC_WEB_NEWS_EN.search(task) or self._PUBLIC_WEB_NEWS_CN.search(task):
+            if self._RECENCY_HINT_EN.search(text) or self._RECENCY_HINT_CN.search(text):
+                score += 5
+            if self._NEWS_LIST_HINT_EN.search(text) or self._NEWS_LIST_HINT_CN.search(text):
+                score += 4
+            if any(host in url for host in ("chinanews.com.cn", "cctv.com", "thepaper.cn", "news.sina.com.cn")):
+                score += 3
+        if self._DOC_LOOKUP_EN.search(task) or self._DOC_LOOKUP_CN.search(task):
+            if self._DOC_PATH_HINT.search(url):
+                score += 5
+            if re.search(r"(?i)^https?://docs\.", url):
+                score += 4
+            if re.search(r"(?i)^https?://docs\.[^/]+/?$", url) or re.search(r"(?i)^https?://www\.[^/]+/doc/?$", url):
+                score += 2
+            if self._DOC_LOOKUP_EN.search(text) or self._DOC_LOOKUP_CN.search(text):
+                score += 4
+            if "tutorial" not in task.lower() and "教程" not in task:
+                if re.search(r"(?i)(tutorial|/tutorial/)", f"{title}\n{url}"):
+                    score -= 3
+        if "官网" in task or self._OFFICIAL_SITE_EN.search(task):
+            if self._HOMEPAGE_PENALTY_EN.search(title) or self._HOMEPAGE_PENALTY_CN.search(title):
+                score += 2
+            if re.search(r"^https?://[^/]+/?$", url):
+                score += 2
+        if self._HOMEPAGE_PENALTY_EN.search(text) or self._HOMEPAGE_PENALTY_CN.search(text):
+            score -= 1
+        if "duckduckgo.com/" in url:
+            score -= 10
+        return score
+
+    def _preferred_direct_http_fetch_urls(self, task: str, prior_context: str | None) -> list[str]:
+        stripped = task.strip()
+        if self._URL_PATTERN.search(stripped) or not prior_context:
+            return []
+        if "web_search failed" not in prior_context:
+            return []
+        if "DuckDuckGo returned a bot-detection challenge" not in prior_context:
+            return []
+        if self._PUBLIC_WEB_NEWS_CN.search(stripped):
+            if "AI" in stripped or "ai" in stripped or "人工智能" in stripped:
+                return list(self._CURATED_CN_AI_NEWS_URLS)
+            return list(self._CURATED_CN_NEWS_URLS)
+        return []
+
+    def _follow_up_fetch_limit(self, task: str) -> int:
+        if self._PUBLIC_WEB_NEWS_EN.search(task) or self._PUBLIC_WEB_NEWS_CN.search(task):
+            return 3
+        if self._DOC_LOOKUP_EN.search(task) or self._DOC_LOOKUP_CN.search(task):
+            return 2
+        if "官网" in task or self._OFFICIAL_SITE_EN.search(task):
+            return 1
+        if self._CONTENT_SEEK_EN.search(task) or self._CONTENT_SEEK_CN.search(task):
+            return 2
+        return 0
 
     def _extract_file_write(self, task: str) -> tuple[str, str] | None:
         for pattern in self._WRITE_PATTERNS:
@@ -275,6 +391,8 @@ class HeuristicPlanner(Planner):
         if self._URL_PATTERN.search(stripped):
             return None
         if self._WEB_SEARCH_EN.search(stripped) or self._WEB_SEARCH_CN.search(stripped):
+            return stripped
+        if self._PUBLIC_WEB_NEWS_EN.search(stripped) or self._PUBLIC_WEB_NEWS_CN.search(stripped):
             return stripped
         if "官网" in stripped:
             return stripped

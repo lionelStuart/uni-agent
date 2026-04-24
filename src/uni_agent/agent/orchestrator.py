@@ -195,10 +195,12 @@ class Orchestrator:
 
                 if all(step.status == TaskStatus.COMPLETED for step in batch):
                     self._stream({"type": "round_completed", "round": round_idx})
+                    goal_check_error = False
                     if self._goal_check is not None and self._goal_check.is_available():
                         try:
                             gc = self._goal_check.check(task, accumulated, session_context)
                         except Exception as exc:  # noqa: BLE001 — surface as stream + safe exit
+                            goal_check_error = True
                             self._stream(
                                 {
                                     "type": "goal_check",
@@ -207,31 +209,33 @@ class Orchestrator:
                                     "error": str(exc)[:1_200],
                                 }
                             )
-                            break
-                        self._stream(
-                            {
-                                "type": "goal_check",
-                                "round": round_idx,
-                                "satisfied": gc.goal_satisfied,
-                                "reason": (gc.reason or "")[:2_000],
-                            }
-                        )
-                        if gc.goal_satisfied:
-                            break
-                        goal_mismatch_count += 1
-                        if goal_mismatch_count > self._plan_goal_check_max_replan_rounds:
-                            goal_exhausted = True
-                            break
-                        parts: list[str] = []
-                        if (gc.reason or "").strip():
-                            parts.append(f"Review: {gc.reason.strip()}")
-                        if (gc.planner_brief or "").strip():
-                            parts.append(f"Planner focus:\n{gc.planner_brief.strip()}")
-                        outcome_feedback = (
-                            "\n\n".join(parts)
-                            if parts
-                            else "Re-plan: the previous successful batch did not yet satisfy the user task; use different or additional tools."
-                        )
+                        else:
+                            self._stream(
+                                {
+                                    "type": "goal_check",
+                                    "round": round_idx,
+                                    "satisfied": gc.goal_satisfied,
+                                    "reason": (gc.reason or "")[:2_000],
+                                }
+                            )
+                            if gc.goal_satisfied:
+                                break
+                            goal_mismatch_count += 1
+                            if goal_mismatch_count > self._plan_goal_check_max_replan_rounds:
+                                goal_exhausted = True
+                                break
+                            parts: list[str] = []
+                            if (gc.reason or "").strip():
+                                parts.append(f"Review: {gc.reason.strip()}")
+                            if (gc.planner_brief or "").strip():
+                                parts.append(f"Planner focus:\n{gc.planner_brief.strip()}")
+                            outcome_feedback = (
+                                "\n\n".join(parts)
+                                if parts
+                                else "Re-plan: the previous successful batch did not yet satisfy the user task; use different or additional tools."
+                            )
+                            continue
+                    if goal_check_error and any(step.tool == "web_search" for step in batch):
                         continue
                     break
 

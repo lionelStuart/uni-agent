@@ -91,6 +91,19 @@ class PydanticAIPlanner(Planner):
         tool_names_set = {tool.name for tool in available_tools}
         allowed = self._resolve_allowed_tools(selected_skills, tool_names_set)
         skip_shortcuts = bool(prior_context or outcome_feedback)
+        direct_urls = self._fallback._preferred_direct_http_fetch_urls(task.strip(), prior_context)
+        if direct_urls and "http_fetch" in allowed:
+            selected_skill = selected_skills[0].name if selected_skills else None
+            return [
+                PlanStep(
+                    id=f"step-{idx}",
+                    description=f"Fetch remote content from {url}.",
+                    tool="http_fetch",
+                    skill=selected_skill,
+                    arguments={"url": url},
+                )
+                for idx, url in enumerate(direct_urls, start=1)
+            ]
         if not skip_shortcuts:
             mem_q = self._fallback._memory_search_query(task.strip())
             if mem_q is not None and "memory_search" in allowed:

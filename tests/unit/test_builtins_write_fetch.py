@@ -127,6 +127,32 @@ def test_web_search_returns_structured_results(mock_urlopen) -> None:
     assert "Official documentation" in payload["results"][0]["snippet"]
 
 
+@patch("uni_agent.tools.builtins.urlopen")
+def test_web_search_decodes_duckduckgo_ad_redirect_urls(mock_urlopen) -> None:
+    workspace = Path(".")
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    register_builtin_handlers(registry, workspace, LocalSandbox(workspace.resolve()))
+
+    html = """
+    <html><body>
+      <a class="result__a" href="https://duckduckgo.com/y.js?u3=https%3A%2F%2Fexample.com%2Farticle">Example Article</a>
+      <a class="result__snippet">Decoded target page</a>
+    </body></html>
+    """
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = html.encode("utf-8")
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.__exit__.return_value = None
+    mock_urlopen.return_value = mock_resp
+
+    output = registry.execute("web_search", {"query": "example article", "count": 3})
+    payload = json.loads(output)
+
+    assert payload["count"] == 1
+    assert payload["results"][0]["url"] == "https://example.com/article"
+
+
 @patch("uni_agent.tools.builtins.ssl.create_default_context")
 @patch("uni_agent.tools.builtins.urlopen")
 def test_http_fetch_uses_configured_ca_bundle(mock_urlopen, mock_create_default_context, tmp_path: Path) -> None:
