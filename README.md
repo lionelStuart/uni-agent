@@ -1,78 +1,292 @@
 # uni-agent
 
-可加载可插拔 **Skills** 的通用 **Agent Client**（Python CLI）。
+可加载可插拔 **Skills** 的通用 **Agent Client**，同时提供：
 
-核心组成：
+- 命令行入口：`uni-agent run|client|replay|skills`
+- 进程内 SDK：`uni_agent.sdk`
+- 本地沙箱执行：`LocalSandbox`
+- 基于本地目录的 skill 自动发现与注入
+
+## 核心组成
 
 - **Agent Runtime**：`Orchestrator` + `Planner`（启发式 / PydanticAI）+ `Executor`
-- **通用 Sandbox**：`LocalSandbox`（命令白名单、超时、可选交互批准）
-- **Skills**：本地 `skills/<name>/` 自动加载（**每层子目录一项 skill**）：优先 **`SKILL.md`**（YAML frontmatter + 正文，对齐 Codex / Claude Code / Cursor）；否则 **`skill.yaml`** + `entry` 指向的 Markdown。可选 **`references/`、`reference.md`、`examples.md`** 与 **`scripts/`**，合并为 `instruction_text`；小参考文件可内联进提示。`UNI_AGENT_SKILLS_DIR` 对应 `skills_dir`，加载器使用 **`UNI_AGENT_WORKSPACE`** 计算 `file_read` 用的相对路径
+- **Sandbox**：`LocalSandbox`，支持命令白名单、超时、可选交互批准
+- **Skills**：从本地 `skills/<name>/` 自动加载；优先读取 `SKILL.md`，否则回退到 `skill.yaml` + `entry`
+- **Observability**：任务落盘、历史回放、交互 session、本地记忆目录
 
-**进程内 SDK**（可编程接入）：`from uni_agent.sdk import AgentConfig, create_client, AgentRegistry` — 用 `workspace` + `skills_dir`、人设与 `to_settings()` 对接 `build_orchestrator`，支持 `on_event=` 流式（与 CLI `--stream` 同一套 NDJSON 事件，含子代理 `delegation`）；`AgentClient.orchestrator` 为同一装配得到的 `Orchestrator` 逃生舱（见 [sdk-runtime](docs/sdk-runtime.md)）。见 [开发文档 §4.9–§4.10](docs/开发文档.md)、[流式 `docs/sdk-streaming.md`](docs/sdk-streaming.md)、[进度 §2.1](docs/进度文档.md#21-sdk-分轮工作安排可编程接入--多-agent--流式)；可运行示例 [`examples/sdk_minimal.py`](examples/sdk_minimal.py)、[多 agent 清单与 `sdk_multi_agent.py`](examples/agents.example.yaml)、[`examples/sdk_concurrency.py`](examples/sdk_concurrency.py)、[`examples/sdk_orchestrator_escape.py`](examples/sdk_orchestrator_escape.py)。
+## 当前能力
 
-详细设计见：
+- `uni-agent run "<任务>"`：自动规划并执行工具，可通过 `--plan` 使用静态计划文件
+- `uni-agent replay <run_id>`：从 `.uni-agent/runs/` 回放已落盘的 `TaskResult`
+- 多轮重规划：执行失败后带执行日志继续规划；可选 goal check 判定任务是否真正完成
+- 交互客户端：`uni-agent client` 提供 REPL、session 落盘、会话重载和本地记忆提取
+- 流式事件：CLI `--stream` 和 SDK `on_event=` 共用同一套 NDJSON 事件模型
+- 本地记忆：`memory_search`、交互式 `memory search`、空闲自动抽取到 `.uni-agent/memory`
+- 子代理委派：`delegate_task` 启动单层子 `Orchestrator.run`，支持只读工具集
+- 历史结论：结果中包含 `conclusion` 字段，支持规则摘要和可选 LLM 结论
 
-- [设计文档](docs/设计文档.md)
-- [开发文档](docs/开发文档.md)
-- [进度文档](docs/进度文档.md)
-- [Skills 目录与 SKILL.md 说明](docs/Skills目录与SKILL说明.md)
-- [Agent 运行流程与领域模型](docs/Agent运行流程与领域模型.md)
-- [SDK 流式事件（NDJSON）](docs/sdk-streaming.md)
-- [多 agent 清单（YAML/JSON）](docs/sdk-agents.md)
-- [SDK 并发与资源](docs/sdk-concurrency.md)
-- [SDK 与运行时（`build_orchestrator`、`.orchestrator`）](docs/sdk-runtime.md)
+## 内置工具
 
-## 能力摘要（当前实现）
+- `shell_exec`
+- `file_read`
+- `file_write`
+- `http_fetch`
+- `search_workspace`
+- `command_lookup`
+- `run_python`
+- `memory_search`
+- `delegate_task`
 
-- `uni-agent run "<任务>"`：自动规划并执行工具；支持 `--plan` 静态计划文件
-- **历史回放**：`uni-agent replay <run_id>` 从 `.uni-agent/runs/` 读出已落盘的 `TaskResult`；`--format full|steps|jsonl`（默认 `full` 为完整 JSON），`--verbose` 在 `full` 模式下额外打印每步摘要
-- **多轮重规划**：失败后带执行日志再规划（`UNI_AGENT_ORCHESTRATOR_MAX_FAILED_ROUNDS`）；**可选**在每批步骤**全部成功**后做 LLM **目标检查**，未达预期则带反馈再规划（`UNI_AGENT_PLAN_GOAL_CHECK_ENABLED` 等，见 `.env.example`）
-- **内置工具**：`shell_exec`、`file_read`、`file_write`、`http_fetch`、`search_workspace`（ripgrep 固定字符串；无匹配不视为失败）、`command_lookup`（解析 PATH 上的命令名、可选抓取 `--help`/`-h`、或按前缀列举可执行文件名）、`run_python`（workspace 沙箱内短片段，临时文件在 `.uni-agent/code_run/`）、`memory_search`（本地 L0/L1）、`delegate_task`（单层子 agent：新开 `Orchestrator.run`，子 run 不落 `delegate_task`；可选 `UNI_AGENT_DELEGATE_TOOL_PROFILE=readonly` 限制子工具集；子流式事件带 `delegation.phase=child`）；与能力绑定，**规划阶段始终**向模型/启发式提供完整工具清单（readonly 子 run 除外）
-- **Skills 与工具**：匹配到的 skill 主要注入 `instruction_text`（及元数据）；`allowed_tools` 等字段**不**用于限制本轮可选内置工具，避免误把「领域说明」当成「工具白名单」
-- **OpenAI 兼容 API**：`UNI_AGENT_OPENAI_BASE_URL` / `UNI_AGENT_OPENAI_API_KEY`；适配 Qwen 等网关的 `tool_choice` 行为
-- **交互客户端**：`uni-agent client` 进入 REPL（`--session` / `-s` 可加载已有 session id 或 id 前缀；默认新建 session，落盘在 `UNI_AGENT_SESSION_DIR`）；每轮任务结束后追加写入 session；内置命令：`load <id>`、`sessions`、`new`、`status`、`help` / `?`、`exit` / `quit` / `:q`；**记忆**：`memory search <q>`（与工具 `memory_search` 同策略）、`memory status`、`memory extract`（立即把本会话未落盘轮次写入 `memory_dir`）；空闲 `UNI_AGENT_MEMORY_IDLE_EXTRACT_SECONDS` 后也会后台增量落盘（见 `UNI_AGENT_MEMORY_EXTRACT_ENABLED`）；进度用人类可读格式打在 stderr
-- **流式过程**：默认 `uni-agent run ... --stream` 在 **stderr** 输出 NDJSON 事件；`--no-stream` 关闭；**stdout** 仍为最终完整 JSON
-- **运行结论**：结果中含 `conclusion` 字段（规则摘要 + 可选 LLM）
-- **LLM 系统提示词**：内置默认文案（`agent/system_prompts.py`）；可通过 `UNI_AGENT_GLOBAL_SYSTEM_PROMPT`、`UNI_AGENT_PLANNER_INSTRUCTIONS`、`UNI_AGENT_CONCLUSION_SYSTEM_PROMPT` 覆盖或加前缀（见 `.env.example`）
-- **上下文与输出截断**：交互 session 对历史任务做规则化摘要（`compress_task_result_for_session`）；重规划时的 `prior_context` 与工具返回（如 `file_read` / sandbox）均有字符上限截断
-- **本地记忆夹**：默认目录 **`$UNI_AGENT_WORKSPACE/.uni-agent/memory`**（`UNI_AGENT_MEMORY_DIR` 相对路径亦以 workspace 为基准，避免 shell cwd 与项目根不一致时读写/检索分叉）；**`memory_index.json`** 存 **L0** 与 **`l1/*.json`** 路径；**`memory_search`**（工具与 REPL `memory search`）在配置 LLM 时：**由模型根据问题生成关键词 → 在 L0 上做子串匹配 → 将命中条目的 L1 交给模型整理回答**（关键词 LLM 失败时仍用用户原问句参与匹配）；关闭 `UNI_AGENT_MEMORY_SEARCH_USE_LLM` 时退化为 L0 字面子串检索
-- **规划侧「回忆」路由**：任务含 **我是谁 / 我叫什么 / 还记得我吗 / who am i** 等短语时，**启发式与 PydanticAI 规划器**均优先单步 **`memory_search`**（再走 L0/L1），避免被默认「闲聊 → echo」规则带偏
-- **规划侧「委派」路由**：在 **`memory_search` 未命中** 的前提下，任务原文含 **`delegate_task` / 子代理 / sub-agent / subagent** 时，**启发式与 PydanticAI**（含在调用规划 LLM 之前）均可直接单步 **`delegate_task`**；隐式拆子代理仍主要依赖 LLM 或 `--plan` 静态计划（见 `docs/cases/design-trigger-subagent-delegate-task.md`）
-- **任务落盘**：`.uni-agent/runs/`（已 `.gitignore`，不提交）
+其中：
 
-## 开发约束
+- `search_workspace` 基于 `ripgrep` 固定字符串搜索；无匹配不视为失败
+- `run_python` 在 workspace 沙箱内运行短脚本，临时文件落在 `.uni-agent/code_run/`
+- `delegate_task` 的子 run 可通过 `UNI_AGENT_DELEGATE_TOOL_PROFILE=readonly` 限制为只读工具集
 
-实现与文档不一致时，**先改文档再改代码**。协作流程见 [进度文档](docs/进度文档.md) 中的记录规范。
+## Skills 约定
 
-**迭代收尾**：合入前检查 **`tests/`** 与 **`examples/`** 是否需随功能变更而更新（见 [进度文档 §2.1](docs/进度文档.md#21-sdk-分轮工作安排可编程接入--多-agent--流式) 的「每轮收尾」说明）。
+- skill 根目录为 `skills/`
+- 每层子目录视为一个 skill
+- 优先加载 `SKILL.md`，支持 YAML frontmatter + Markdown 正文
+- 若无 `SKILL.md`，则读取 `skill.yaml` 与其 `entry` 指向的 Markdown
+- 可选合并 `references/`、`reference.md`、`examples.md`、`scripts/` 内容为 `instruction_text`
+- `skills_dir` 对应环境变量 `UNI_AGENT_SKILLS_DIR`
+- 加载器用 `UNI_AGENT_WORKSPACE` 作为 `file_read` 相对路径基准
+
+## SDK
+
+进程内 SDK 入口：
+
+```python
+from uni_agent.sdk import (
+    AgentConfig,
+    AgentClient,
+    AgentRegistry,
+    create_client,
+    load_agent_configs_from_file,
+    load_agent_registry_from_file,
+)
+```
+
+### SDK 提供的能力
+
+- `AgentConfig`：显式描述 `workspace`、`skills_dir`、模型、提示词和多 agent 隔离配置
+- `create_client(config, on_event=...)`：构建一个 `AgentClient`
+- `AgentClient.run(task, plan_override=None, session_context=None)`：执行任务
+- `AgentClient.replay(run_id)`：回放某次 run
+- `AgentClient.orchestrator`：暴露同一实例的 `Orchestrator` 作为逃生舱
+- `AgentRegistry`：按 `agent_id` 缓存和复用 `AgentClient`
+- `load_agent_configs_from_file(path)`：只解析 manifest，不创建运行时
+- `load_agent_registry_from_file(path, on_event=...)`：从 manifest 一次性注册多个 agent
+
+### `AgentConfig` 常用字段
+
+- `name`
+- `description`
+- `workspace`
+- `skills_dir`
+- `storage_namespace`
+- `planner_backend`
+- `model_name`
+- `openai_base_url`
+- `openai_api_key`
+- `global_system_prompt`
+- `planner_instructions`
+- `conclusion_system_prompt`
+- `run_conclusion_llm`
+
+说明：
+
+- `to_settings()` 会生成显式 `Settings`，避免多 agent 共进程时混用同一套环境变量
+- `storage_namespace` 会把任务日志与 memory 目录隔离到 `<workspace>/.uni-agent/.../<namespace>/`
+- 当 `global_system_prompt` 未设置时，会基于 `name` 与 `description` 生成默认人设前缀
+
+### `AgentRegistry` 语义
+
+- 同一个 `agent_id` 对应同一个缓存的 `AgentClient`
+- `get_or_create()` 在已有同名 client 时不会替换旧实例
+- 若需要不同 `on_event` 或不同装配结果，应新建 `agent_id` 或直接重新 `create_client`
+
+### Manifest 加载
+
+manifest 支持 `.json`、`.yaml`、`.yml`，根对象必须包含非空 `agents` 数组。
+
+每个条目至少需要：
+
+- `id`
+- `workspace`
+- `skills_dir`
+
+路径规则：
+
+- 相对 `workspace` 以 manifest 文件所在目录为基准
+- 相对 `skills_dir` 以该 agent 的 `workspace` 为基准
+
+`id` 必须匹配：
+
+```text
+^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$
+```
+
+### SDK 与运行时的关系
+
+- SDK 与 CLI 共用同一条运行时装配链：`build_orchestrator(settings=..., stream_event=...)`
+- `AgentClient.orchestrator` 与 `run()` / `replay()` 使用的是同一个 `Orchestrator`
+- 不建议在同一个 `Orchestrator` 实例上并发执行多个 `run()`
+
+并发与多路流式的细节见：
+
+- [docs/sdk-concurrency.md](docs/sdk-concurrency.md)
+- [docs/sdk-streaming.md](docs/sdk-streaming.md)
+- [docs/sdk-runtime.md](docs/sdk-runtime.md)
+- [docs/sdk-agents.md](docs/sdk-agents.md)
+
+## 可运行示例
+
+- 最小 SDK 示例：[examples/sdk_minimal.py](examples/sdk_minimal.py)
+- 多 agent manifest + registry：[examples/agents.example.yaml](examples/agents.example.yaml)、[examples/sdk_multi_agent.py](examples/sdk_multi_agent.py)
+- 并发使用方式：[examples/sdk_concurrency.py](examples/sdk_concurrency.py)
+- 运行时逃生舱 `.orchestrator`：[examples/sdk_orchestrator_escape.py](examples/sdk_orchestrator_escape.py)
+
+## CLI
+
+入口命令：
+
+- `uni-agent run`
+- `uni-agent client`
+- `uni-agent replay`
+- `uni-agent skills`
+
+### `run`
+
+```bash
+uni-agent run "read README.md"
+```
+
+- 默认可通过 `--stream` 在 `stderr` 输出 NDJSON 事件
+- `--no-stream` 关闭流式事件
+- `stdout` 保持输出最终完整 JSON
+- 可通过 `--plan` 使用静态计划文件
+
+### `replay`
+
+```bash
+uni-agent replay <run_id> --format steps
+```
+
+支持：
+
+- `--format full|steps|jsonl`
+- `--verbose`：在 `full` 模式下额外打印步骤摘要
+
+### `client`
+
+`uni-agent client` 进入交互式 REPL，支持：
+
+- `load <id>`
+- `sessions`
+- `new`
+- `status`
+- `help` / `?`
+- `exit` / `quit` / `:q`
+- `memory search <q>`
+- `memory status`
+- `memory extract`
+
+session 默认落盘到 `UNI_AGENT_SESSION_DIR`，记忆默认落盘到 `UNI_AGENT_MEMORY_DIR`。
 
 ## 本地运行
-
-入口命令为 **`uni-agent`**（子命令：`run`、`skills`、`client`、`replay`）。安装后确保虚拟环境的 `bin` 在 `PATH` 中。
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 
-# 若出现 certificate verify failed（访问 pypi.org 失败），可临时放宽校验（仅当你信任当前网络环境）：
-# pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[dev]'
-
 uni-agent skills
 uni-agent run "read README.md"
-# 仅看最终 JSON、不要 stderr 流式事件：
-# uni-agent run "read README.md" --no-stream
-# 回放某次 run（run_id 见当次 JSON 或 .uni-agent/runs/*.json）：
-# uni-agent replay <run_id> --format steps
-
 pytest
 ```
 
-配置示例见仓库根目录 `.env.example`。
+如果访问 PyPI 时遇到证书问题，可临时使用：
 
-若环境变量里使用 **SOCKS** 代理（如 `ALL_PROXY=socks5://...`），依赖里已包含 `socksio`（供 httpx 使用）；更新代码后请重新执行 `pip install -e '.[dev]'`。
+```bash
+pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[dev]'
+```
 
-**根因修复（优先于 `--trusted-host`）**：公司设备请把企业根证书导入系统钥匙串 / 使用 IT 提供的 `PIP_CERT` 或 `SSL_CERT_FILE`；macOS 官方 Python 可运行 `/Applications/Python 3.x/Install Certificates.command`（若存在）。
+这只是临时绕过。更推荐：
+
+- 导入企业根证书
+- 配置 `PIP_CERT` 或 `SSL_CERT_FILE`
+- 在 macOS 官方 Python 环境执行 `Install Certificates.command`
+
+如果使用 SOCKS 代理，例如 `ALL_PROXY=socks5://...`，依赖中已包含 `socksio` 供 `httpx` 使用。代码更新后请重新执行 `pip install -e '.[dev]'`。
+
+## 关键配置
+
+完整示例见 [.env.example](.env.example)。
+
+常用项：
+
+- `UNI_AGENT_MODEL_NAME`
+- `UNI_AGENT_OPENAI_BASE_URL`
+- `UNI_AGENT_OPENAI_API_KEY`
+- `UNI_AGENT_WORKSPACE`
+- `UNI_AGENT_SKILLS_DIR`
+- `UNI_AGENT_TASK_LOG_DIR`
+- `UNI_AGENT_SESSION_DIR`
+- `UNI_AGENT_MEMORY_DIR`
+- `UNI_AGENT_MEMORY_EXTRACT_ENABLED`
+- `UNI_AGENT_MEMORY_IDLE_EXTRACT_SECONDS`
+- `UNI_AGENT_MEMORY_SEARCH_USE_LLM`
+- `UNI_AGENT_ORCHESTRATOR_MAX_FAILED_ROUNDS`
+- `UNI_AGENT_PLAN_GOAL_CHECK_ENABLED`
+- `UNI_AGENT_PLAN_GOAL_CHECK_MAX_REPLAN_ROUNDS`
+- `UNI_AGENT_PLAN_GOAL_CHECK_SYSTEM_PROMPT`
+- `UNI_AGENT_DELEGATE_MAX_FAILED_ROUNDS`
+- `UNI_AGENT_DELEGATE_TOOL_PROFILE`
+- `UNI_AGENT_GLOBAL_SYSTEM_PROMPT`
+- `UNI_AGENT_PLANNER_INSTRUCTIONS`
+- `UNI_AGENT_CONCLUSION_SYSTEM_PROMPT`
+
+其中：
+
+- `UNI_AGENT_MEMORY_DIR` 默认以 `UNI_AGENT_WORKSPACE` 为基准，而不是 shell cwd
+- `UNI_AGENT_DELEGATE_TOOL_PROFILE=readonly` 时，子代理只暴露只读工具
+- 打开 `UNI_AGENT_PLAN_GOAL_CHECK_ENABLED` 后，每轮全成功执行后会额外做一次 LLM 目标检查
+
+## 输出目录
+
+默认目录均在 workspace 下的 `.uni-agent/`：
+
+- `runs/`：任务 JSON 落盘
+- `sessions/`：交互 client session
+- `memory/`：本地记忆与索引
+- `code_run/`：`run_python` 临时文件
+
+这些目录已加入 `.gitignore`，不应提交。
+
+## 文档索引
+
+- [docs/设计文档.md](docs/设计文档.md)
+- [docs/开发文档.md](docs/开发文档.md)
+- [docs/进度文档.md](docs/进度文档.md)
+- [docs/Skills目录与SKILL说明.md](docs/Skills目录与SKILL说明.md)
+- [docs/Agent运行流程与领域模型.md](docs/Agent运行流程与领域模型.md)
+- [docs/sdk-streaming.md](docs/sdk-streaming.md)
+- [docs/sdk-agents.md](docs/sdk-agents.md)
+- [docs/sdk-concurrency.md](docs/sdk-concurrency.md)
+- [docs/sdk-runtime.md](docs/sdk-runtime.md)
+
+## 开发约束
+
+实现与文档不一致时，先改文档再改代码。
+
+功能迭代收尾时，应同步检查：
+
+- `tests/`
+- `examples/`
+- `README.md`
+- 对应专题文档
 
 ## 测试
 
@@ -80,4 +294,4 @@ pytest
 python -m pytest -q
 ```
 
-（当前仓库约 **95** 个用例，以 `pytest` 输出为准。）
+当前仓库测试规模以实际 `pytest` 输出为准。
