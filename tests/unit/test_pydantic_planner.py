@@ -38,3 +38,33 @@ def test_pydantic_planner_delegate_task_validation() -> None:
     assert not planner._arguments_valid("delegate_task", {"task": ""})
     assert not planner._arguments_valid("delegate_task", {"task": "x", "context": 1})
     assert not planner._arguments_valid("delegate_task", {"task": "x", "include_session": "yes"})
+
+
+def test_pydantic_planner_web_search_validation() -> None:
+    planner = PydanticAIPlanner(provider=EnvLLMProvider("openai:gpt-4.1-mini"), defer_model_check=True)
+    assert planner._arguments_valid("web_search", {"query": "Python docs"})
+    assert planner._arguments_valid(
+        "web_search",
+        {"query": "Python docs", "count": 5, "region": "us-en", "safe_search": "moderate"},
+    )
+    assert not planner._arguments_valid("web_search", {})
+    assert not planner._arguments_valid("web_search", {"query": ""})
+    assert not planner._arguments_valid("web_search", {"query": "x", "count": 99})
+    assert not planner._arguments_valid("web_search", {"query": "x", "safe_search": "maybe"})
+
+
+def test_pydantic_planner_falls_back_when_run_sync_raises(monkeypatch) -> None:
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    planner = PydanticAIPlanner(provider=EnvLLMProvider("openai:gpt-4.1-mini"), defer_model_check=True)
+
+    class _Boom:
+        def run_sync(self, _prompt):
+            raise RuntimeError("Exceeded maximum retries (1) for output validation")
+
+    monkeypatch.setattr(planner, "_agent", _Boom())
+
+    plan = planner.create_plan("read README.md", [], registry.list_tools())
+
+    assert plan
+    assert plan[0].tool == "file_read"

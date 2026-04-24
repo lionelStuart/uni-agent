@@ -51,6 +51,15 @@ def _core_builtin_specs() -> tuple[ToolSpec, ...]:
             risk_level="medium",
         ),
         ToolSpec(
+            name="web_search",
+            description=(
+                "Search the public web (DuckDuckGo HTML endpoint, experimental) and return structured results "
+                "with titles, URLs, and snippets. Args: `query` (required), optional `count` (1-10), "
+                "`region` (e.g. us-en), and `safe_search` (strict|moderate|off)."
+            ),
+            risk_level="medium",
+        ),
+        ToolSpec(
             name="search_workspace",
             description=(
                 "Search file contents: `query` is a literal substring (ripgrep fixed-string, not regex). "

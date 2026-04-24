@@ -14,6 +14,8 @@ DEFAULT_PLANNER_SYSTEM_PROMPT = (
     "read an existing workspace file → file_read; "
     "find files or literal text matches → search_workspace (fixed-string, not regex); "
     "fetch a public http(s) URL → http_fetch; "
+    "search the public web when the exact URL is not known → web_search; "
+    "for open-web fact-finding tasks, web_search usually finds candidate URLs first and http_fetch should then read the most relevant result pages before concluding; "
     "recall persisted client-session memory → memory_search; "
     "resolve a CLI name or read --help/-h before running an unfamiliar program → command_lookup; "
     "short Python (calc, transform, import project code) with cwd=workspace → run_python; "

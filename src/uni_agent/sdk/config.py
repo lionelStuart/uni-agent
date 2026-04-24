@@ -34,6 +34,14 @@ class AgentConfig(BaseModel):
     model_name: str | None = Field(default=None, description="Overrides UNI_AGENT_MODEL_NAME when not None.")
     openai_base_url: str | None = None
     openai_api_key: str | None = None
+    ca_bundle: Path | None = Field(
+        default=None,
+        description="Optional CA bundle file for urllib-based HTTPS tools; relative paths resolve under workspace.",
+    )
+    skip_tls_verify: bool = Field(
+        default=True,
+        description="If true, urllib-based HTTPS tools disable TLS certificate verification. Insecure.",
+    )
     planner_backend: PlannerBackend = "auto"
     global_system_prompt: str | None = Field(
         default=None,
@@ -43,6 +51,10 @@ class AgentConfig(BaseModel):
     planner_instructions: str | None = None
     conclusion_system_prompt: str | None = None
     run_conclusion_llm: bool | None = None
+    plan_goal_check_enabled: bool | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_PLAN_GOAL_CHECK_ENABLED when not None.",
+    )
 
     def to_settings(self) -> Settings:
         """Build explicit ``Settings`` for this profile (call-site kwargs override same-named env)."""
@@ -84,6 +96,11 @@ class AgentConfig(BaseModel):
             kwargs["openai_base_url"] = self.openai_base_url
         if self.openai_api_key is not None:
             kwargs["openai_api_key"] = self.openai_api_key
+        if self.ca_bundle is not None:
+            kwargs["ca_bundle"] = self.ca_bundle
+        kwargs["skip_tls_verify"] = self.skip_tls_verify
         if self.run_conclusion_llm is not None:
             kwargs["run_conclusion_llm"] = self.run_conclusion_llm
+        if self.plan_goal_check_enabled is not None:
+            kwargs["plan_goal_check_enabled"] = self.plan_goal_check_enabled
         return Settings(**kwargs)

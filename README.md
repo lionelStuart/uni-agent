@@ -22,6 +22,7 @@
 - 交互客户端：`uni-agent client` 提供 REPL、session 落盘、会话重载和本地记忆提取
 - 流式事件：CLI `--stream` 和 SDK `on_event=` 共用同一套 NDJSON 事件模型
 - 本地记忆：`memory_search`、交互式 `memory search`、空闲自动抽取到 `.uni-agent/memory`
+- DuckDuckGo 网页搜索：`web_search` 内置工具可返回标题、URL 和摘要片段
 - 子代理委派：`delegate_task` 启动单层子 `Orchestrator.run`，支持只读工具集
 - 历史结论：结果中包含 `conclusion` 字段，支持规则摘要和可选 LLM 结论
 
@@ -31,6 +32,7 @@
 - `file_read`
 - `file_write`
 - `http_fetch`
+- `web_search`
 - `search_workspace`
 - `command_lookup`
 - `run_python`
@@ -40,6 +42,7 @@
 其中：
 
 - `search_workspace` 基于 `ripgrep` 固定字符串搜索；无匹配不视为失败
+- `web_search` 当前以 DuckDuckGo HTML 搜索页为后端，不需要 API key，但属于实验性实现，可能受反爬或页面结构变更影响
 - `run_python` 在 workspace 沙箱内运行短脚本，临时文件落在 `.uni-agent/code_run/`
 - `delegate_task` 的子 run 可通过 `UNI_AGENT_DELEGATE_TOOL_PROFILE=readonly` 限制为只读工具集
 
@@ -90,6 +93,9 @@ from uni_agent.sdk import (
 - `model_name`
 - `openai_base_url`
 - `openai_api_key`
+- `ca_bundle`
+- `skip_tls_verify`
+- `plan_goal_check_enabled`
 - `global_system_prompt`
 - `planner_instructions`
 - `conclusion_system_prompt`
@@ -100,6 +106,9 @@ from uni_agent.sdk import (
 - `to_settings()` 会生成显式 `Settings`，避免多 agent 共进程时混用同一套环境变量
 - `storage_namespace` 会把任务日志与 memory 目录隔离到 `<workspace>/.uni-agent/.../<namespace>/`
 - 当 `global_system_prompt` 未设置时，会基于 `name` 与 `description` 生成默认人设前缀
+- `ca_bundle` 用于给 `http_fetch` / `web_search` 提供显式 CA bundle；相对路径以 `workspace` 为基准
+- `skip_tls_verify` 默认开启，`http_fetch` / `web_search` 会跳过 TLS 证书校验；如需恢复严格校验，可显式设为 `false` 或改用 `ca_bundle`
+- `plan_goal_check_enabled` 默认开启；当一轮工具都执行成功但答案仍不完整时，会触发一次 LLM 复核并推动后续重规划
 
 ### `AgentRegistry` 语义
 
@@ -235,6 +244,8 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 - `UNI_AGENT_TASK_LOG_DIR`
 - `UNI_AGENT_SESSION_DIR`
 - `UNI_AGENT_MEMORY_DIR`
+- `UNI_AGENT_CA_BUNDLE`
+- `UNI_AGENT_SKIP_TLS_VERIFY`
 - `UNI_AGENT_MEMORY_EXTRACT_ENABLED`
 - `UNI_AGENT_MEMORY_IDLE_EXTRACT_SECONDS`
 - `UNI_AGENT_MEMORY_SEARCH_USE_LLM`
@@ -251,8 +262,10 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 其中：
 
 - `UNI_AGENT_MEMORY_DIR` 默认以 `UNI_AGENT_WORKSPACE` 为基准，而不是 shell cwd
+- `UNI_AGENT_CA_BUNDLE` 当前作用于 `http_fetch` 与 `web_search` 的 HTTPS 校验；适用于企业代理、自签根证书等场景
+- `UNI_AGENT_SKIP_TLS_VERIFY` 默认是 `true`，会让 `http_fetch` 与 `web_search` 忽略 TLS 证书错误；如需严格校验，请显式设为 `false`，并优先使用 `UNI_AGENT_CA_BUNDLE`
 - `UNI_AGENT_DELEGATE_TOOL_PROFILE=readonly` 时，子代理只暴露只读工具
-- 打开 `UNI_AGENT_PLAN_GOAL_CHECK_ENABLED` 后，每轮全成功执行后会额外做一次 LLM 目标检查
+- `UNI_AGENT_PLAN_GOAL_CHECK_ENABLED` 默认是 `true`；每轮全成功执行后会额外做一次 LLM 目标检查，不满足时继续重规划
 
 ## 输出目录
 

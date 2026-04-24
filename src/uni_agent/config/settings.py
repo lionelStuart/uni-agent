@@ -43,6 +43,20 @@ class Settings(BaseSettings):
             "Relative paths resolve under ``workspace`` (not process cwd)."
         ),
     )
+    ca_bundle: Path | None = Field(
+        default=None,
+        description=(
+            "Optional CA bundle file for urllib-based HTTPS tools (for example http_fetch / web_search). "
+            "Relative paths resolve under ``workspace``."
+        ),
+    )
+    skip_tls_verify: bool = Field(
+        default=True,
+        description=(
+            "If true, urllib-based HTTPS tools (for example http_fetch / web_search) disable TLS certificate "
+            "verification. Insecure; use only for controlled environments."
+        ),
+    )
     memory_extract_enabled: bool = Field(
         default=True,
         description="If true, interactive client persists new session turns to memory_dir after idle delay.",
@@ -93,7 +107,7 @@ class Settings(BaseSettings):
         description="If true and an LLM is configured, synthesize a final natural-language conclusion after the run.",
     )
     plan_goal_check_enabled: bool = Field(
-        default=False,
+        default=True,
         description=(
             "If true and an LLM is configured, after each batch of steps that all **completed**, run a goal check; "
             "if the task is not yet satisfied, inject feedback into the next plan (re-plan loop, capped by "
@@ -132,6 +146,11 @@ class Settings(BaseSettings):
             p = Path(md)
             anchored = p.resolve() if p.is_absolute() else (ws / p).resolve()
         object.__setattr__(self, "memory_dir", anchored)
+        ca = self.ca_bundle
+        if ca is not None:
+            p = Path(ca)
+            anchored_ca = p.resolve() if p.is_absolute() else (ws / p).resolve()
+            object.__setattr__(self, "ca_bundle", anchored_ca)
         return self
 
 

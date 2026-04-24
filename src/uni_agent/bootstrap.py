@@ -73,6 +73,8 @@ def build_orchestrator(
         http_fetch_allow_private_networks=settings.http_fetch_allow_private_networks,
         http_fetch_allowed_hosts=parse_http_fetch_allowed_hosts(settings.http_fetch_allowed_hosts),
         http_fetch_timeout_seconds=settings.sandbox_command_timeout_seconds,
+        ca_bundle_path=settings.ca_bundle,
+        skip_tls_verify=settings.skip_tls_verify,
         memory_dir=settings.memory_dir,
         memory_llm_provider=provider,
         memory_search_use_llm=settings.memory_search_use_llm,

@@ -33,6 +33,15 @@ class HeuristicPlanner(Planner):
         r"我之前说过(?:什么)?|我以前说过(?:什么)?|"
         r"who\s+am\s+i|what(?:'s|\s+is)\s+my\s+name|do\s+you\s+remember\s+me)"
     )
+    _WEB_SEARCH_EN = re.compile(
+        r"(?i)(?:^|\b)(?:web\s+search|search\s+the\s+web|search\s+web|look\s+up|search\s+online)\b"
+    )
+    _WEB_SEARCH_CN = re.compile(r"(联网搜索|网页搜索|搜索网页|上网查|在线搜索|查官网|搜官网)")
+    _WEB_RESULT_URL_RE = re.compile(r'"url"\s*:\s*"(?P<url>https?://[^"]+)"', re.IGNORECASE)
+    _CONTENT_SEEK_EN = re.compile(
+        r"(?i)\b(news|headline|headlines|latest|today|recent|current|summary|summarize|what happened)\b"
+    )
+    _CONTENT_SEEK_CN = re.compile(r"(新闻|头条|最新|今天|今日|近况|发生了什么|总结|摘要)")
     _PATH_PATTERN = re.compile(r"(?P<path>[\w./-]+\.[A-Za-z0-9]+)")
     _URL_PATTERN = re.compile(r"(https?://[^\s\"'<>]+)", re.IGNORECASE)
     _WRITE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -99,7 +108,31 @@ class HeuristicPlanner(Planner):
                     )
                 ]
 
+            web_q = self._web_search_query(stripped_task)
+            if web_q is not None and "web_search" in allowed_tools:
+                return [
+                    PlanStep(
+                        id="step-1",
+                        description=f"Search the public web for: {web_q[:120]!r}.",
+                        tool="web_search",
+                        skill=selected_skill,
+                        arguments={"query": web_q},
+                    )
+                ]
+
         steps: list[PlanStep] = []
+        follow_up_urls = self._extract_follow_up_fetch_urls(task, prior_context)
+        if follow_up_urls and "http_fetch" in allowed_tools:
+            return [
+                PlanStep(
+                    id=f"step-{idx}",
+                    description=f"Fetch remote content from {url}.",
+                    tool="http_fetch",
+                    skill=selected_skill,
+                    arguments={"url": url},
+                )
+                for idx, url in enumerate(follow_up_urls, start=1)
+            ]
         write_spec = self._extract_file_write(effective_task)
         fetch_url = self._extract_fetch_url(effective_task) if self._needs_http_fetch(effective_task) else None
 
@@ -213,11 +246,38 @@ class HeuristicPlanner(Planner):
             return t
         return None
 
+    def _extract_follow_up_fetch_urls(self, task: str, prior_context: str | None) -> list[str]:
+        if not prior_context or "web_search completed" not in prior_context:
+            return []
+        if not (self._CONTENT_SEEK_EN.search(task) or self._CONTENT_SEEK_CN.search(task)):
+            return []
+        urls: list[str] = []
+        seen: set[str] = set()
+        for match in self._WEB_RESULT_URL_RE.finditer(prior_context):
+            url = match.group("url").strip()
+            if url in seen:
+                continue
+            seen.add(url)
+            urls.append(url)
+            if len(urls) >= 3:
+                break
+        return urls
+
     def _extract_file_write(self, task: str) -> tuple[str, str] | None:
         for pattern in self._WRITE_PATTERNS:
             match = pattern.search(task)
             if match:
                 return match.group("path"), match.group("content")
+        return None
+
+    def _web_search_query(self, task: str) -> str | None:
+        stripped = task.strip()
+        if self._URL_PATTERN.search(stripped):
+            return None
+        if self._WEB_SEARCH_EN.search(stripped) or self._WEB_SEARCH_CN.search(stripped):
+            return stripped
+        if "官网" in stripped:
+            return stripped
         return None
 
     def _needs_http_fetch(self, task: str) -> bool:

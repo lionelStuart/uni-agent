@@ -145,7 +145,17 @@ class PydanticAIPlanner(Planner):
             "Other single-program argv lists are allowed in the plan but may require user approval when executed.\n"
             "Return at least one step when possible."
         )
-        result = self._agent.run_sync(user_prompt)
+        try:
+            result = self._agent.run_sync(user_prompt)
+        except Exception:
+            return self._fallback.create_plan(
+                task,
+                selected_skills,
+                available_tools,
+                prior_context=prior_context,
+                session_context=session_context,
+                outcome_feedback=outcome_feedback,
+            )
         normalized = self._normalize_plan(result.output, allowed, selected_skills)
         if not normalized:
             return self._fallback.create_plan(
@@ -206,6 +216,31 @@ class PydanticAIPlanner(Planner):
             return isinstance(arguments.get("path"), str) and isinstance(arguments.get("content"), str)
         if tool == "http_fetch":
             return isinstance(arguments.get("url"), str) and bool(arguments.get("url"))
+        if tool == "web_search":
+            if not isinstance(arguments.get("query"), str) or not arguments.get("query", "").strip():
+                return False
+            if "count" in arguments:
+                count = arguments["count"]
+                if isinstance(count, bool):
+                    return False
+                if isinstance(count, int):
+                    if not 1 <= count <= 10:
+                        return False
+                elif isinstance(count, str) and count.strip().isdigit():
+                    if not 1 <= int(count.strip()) <= 10:
+                        return False
+                else:
+                    return False
+            region = arguments.get("region")
+            if region is not None and not isinstance(region, str):
+                return False
+            safe_search = arguments.get("safe_search")
+            if safe_search is not None:
+                if not isinstance(safe_search, str):
+                    return False
+                if safe_search.strip().lower() not in {"strict", "moderate", "off"}:
+                    return False
+            return True
         if tool == "search_workspace":
             return isinstance(arguments.get("query"), str)
         if tool == "memory_search":

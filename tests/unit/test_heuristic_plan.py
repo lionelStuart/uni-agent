@@ -38,6 +38,41 @@ def test_heuristic_adds_http_fetch_for_urls() -> None:
     assert fetch_steps[0].arguments["url"].startswith("https://example.com/path")
 
 
+def test_heuristic_shortcuts_to_web_search_for_explicit_web_queries() -> None:
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    planner = HeuristicPlanner()
+
+    plan = planner.create_plan("请联网搜索 Python 官方文档首页", [], registry.list_tools())
+
+    assert len(plan) == 1
+    assert plan[0].tool == "web_search"
+    assert "Python" in plan[0].arguments["query"]
+
+
+def test_heuristic_follows_up_web_search_with_http_fetch_for_content_tasks() -> None:
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    planner = HeuristicPlanner()
+    prior_context = """
+    [r1-step-1] web_search completed: Search the public web for: 'today news 2026'.
+      output:
+      {
+        "query": "today news 2026",
+        "results": [
+          {"title": "AP News", "url": "https://apnews.com/", "snippet": "Latest news"},
+          {"title": "Reuters", "url": "https://www.reuters.com/world/", "snippet": "World news"}
+        ]
+      }
+    """
+
+    plan = planner.create_plan("今天的新闻", [], registry.list_tools(), prior_context=prior_context)
+
+    assert [step.tool for step in plan] == ["http_fetch", "http_fetch"]
+    assert plan[0].arguments["url"] == "https://apnews.com/"
+    assert plan[1].arguments["url"] == "https://www.reuters.com/world/"
+
+
 def test_heuristic_skips_memory_shortcut_when_outcome_feedback() -> None:
     registry = ToolRegistry()
     registry.register_builtin_tools()
