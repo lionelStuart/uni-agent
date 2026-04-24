@@ -32,6 +32,10 @@ class AgentConfig(BaseModel):
         ),
     )
     model_name: str | None = Field(default=None, description="Overrides UNI_AGENT_MODEL_NAME when not None.")
+    context_window_tokens: int | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_CONTEXT_WINDOW_TOKENS when not None.",
+    )
     openai_base_url: str | None = None
     openai_api_key: str | None = None
     ca_bundle: Path | None = Field(
@@ -92,6 +96,8 @@ class AgentConfig(BaseModel):
             kwargs["memory_dir"] = mem
         if self.model_name is not None:
             kwargs["model_name"] = self.model_name
+        if self.context_window_tokens is not None:
+            kwargs["context_window_tokens"] = self.context_window_tokens
         if self.openai_base_url is not None:
             kwargs["openai_base_url"] = self.openai_base_url
         if self.openai_api_key is not None:

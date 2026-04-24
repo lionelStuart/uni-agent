@@ -27,6 +27,7 @@ def test_to_settings_non_path_fields_match_snapshot(tmp_path: Path, _snapshot_no
         skills_dir=tmp_path / "skills",
         storage_namespace="snap-ns",
         model_name=snap["model_name"],
+        context_window_tokens=snap["context_window_tokens"],
         openai_base_url=snap["openai_base_url"],
         openai_api_key=snap["openai_api_key"],
         ca_bundle=snap["ca_bundle"],

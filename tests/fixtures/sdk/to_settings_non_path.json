@@ -1,6 +1,7 @@
 {
   "planner_backend": "pydantic_ai",
   "model_name": "openai:custom",
+  "context_window_tokens": 128000,
   "openai_base_url": "https://example.invalid/v1",
   "openai_api_key": "test-key-snapshot",
   "ca_bundle": "certs/test-ca.pem",

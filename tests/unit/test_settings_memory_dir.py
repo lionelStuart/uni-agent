@@ -19,3 +19,14 @@ def test_memory_dir_relative_is_under_workspace(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setenv("UNI_AGENT_MEMORY_DIR", "custom_mem")
     s = Settings()
     assert s.memory_dir == (proj / "custom_mem").resolve()
+
+
+def test_context_window_defaults_to_256k(monkeypatch, tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    monkeypatch.setenv("UNI_AGENT_WORKSPACE", str(proj))
+    monkeypatch.delenv("UNI_AGENT_CONTEXT_WINDOW_TOKENS", raising=False)
+
+    s = Settings()
+
+    assert s.context_window_tokens == 256_000

@@ -61,6 +61,9 @@ _HTML_META_RE = re.compile(
     r'<meta\b[^>]*\b(?:name|property)="(?P<key>description|og:title|og:description)"[^>]*\bcontent="(?P<value>[^"]*)"',
     re.IGNORECASE,
 )
+_HTML_HEADLINE_RE = re.compile(r"<h[1-3][^>]*>(?P<value>[\s\S]*?)</h[1-3]>", re.IGNORECASE)
+_HTML_PARAGRAPH_RE = re.compile(r"<(?:p|li)[^>]*>(?P<value>[\s\S]*?)</(?:p|li)>", re.IGNORECASE)
+_HTML_LINK_RE = re.compile(r'<a\b[^>]*href="(?P<href>https?://[^"]+)"[^>]*>(?P<label>[\s\S]*?)</a>', re.IGNORECASE)
 
 
 def _python_exe_for_sandbox() -> str:
@@ -117,6 +120,49 @@ def _normalize_html_text(html: str) -> str:
             "og:description": "OG Description",
         }.get(key, key)
         parts.append(f"{label}: {value}")
+
+    lowered = cleaned.lower()
+    page_type = "page"
+    if "<article" in lowered:
+        page_type = "article"
+    elif cleaned.count("<li") >= 4 or cleaned.count("<h2") >= 3:
+        page_type = "listing"
+    elif "/docs" in lowered or "documentation" in lowered:
+        page_type = "docs"
+    parts.append(f"Page Type: {page_type}")
+
+    key_points: list[str] = []
+    for pattern in (_HTML_HEADLINE_RE, _HTML_PARAGRAPH_RE):
+        for match in pattern.finditer(cleaned):
+            value = _decode_html_entities(_strip_html(match.group("value") or ""))
+            if not value:
+                continue
+            if value in key_points:
+                continue
+            key_points.append(value)
+            if len(key_points) >= 6:
+                break
+        if len(key_points) >= 6:
+            break
+    if key_points:
+        parts.append("Key Points:")
+        parts.extend(f"- {item}" for item in key_points[:6])
+
+    useful_links: list[str] = []
+    for match in _HTML_LINK_RE.finditer(cleaned):
+        href = _decode_html_entities(match.group("href") or "").strip()
+        label = _decode_html_entities(_strip_html(match.group("label") or ""))
+        if not href or not label:
+            continue
+        item = f"{label}: {href}"
+        if item in useful_links:
+            continue
+        useful_links.append(item)
+        if len(useful_links) >= 5:
+            break
+    if useful_links:
+        parts.append("Useful Links:")
+        parts.extend(f"- {item}" for item in useful_links)
 
     body_text = _decode_html_entities(_strip_html(cleaned))
     if body_text:

@@ -20,34 +20,95 @@ from uni_agent.agent.executor import Executor
 from uni_agent.agent.planner import Planner
 from uni_agent.agent.goal_check import GoalCheckSynthesizer
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer, fallback_run_conclusion
+from uni_agent.context.budgeting import ContextBudgets, derive_context_budgets
+from uni_agent.context.token_budget import ContextBlock, fit_blocks_to_budget, render_blocks
 from uni_agent.observability.task_store import TaskStore
 from uni_agent.shared.models import PlanStep, TaskResult, TaskStatus
 from uni_agent.skills.matcher import SkillMatcher
 from uni_agent.skills.loader import SkillLoader
 from uni_agent.tools.registry import ToolRegistry
 
-_PRIOR_CONTEXT_MAX_CHARS = 12_000
+_DEFAULT_BUDGETS = derive_context_budgets(256_000)
+_PRIOR_CONTEXT_MAX_TOKENS = _DEFAULT_BUDGETS.prior_context_max_tokens
+_PRIOR_STEP_OUTPUT_MAX_TOKENS = _DEFAULT_BUDGETS.prior_step_output_max_tokens
+_PRIOR_STEP_ERROR_MAX_TOKENS = 220
+_PRIOR_CONTEXT_RECENT_STEPS = 6
 
 
-def _format_prior_context(steps: list[PlanStep]) -> str:
-    parts: list[str] = []
-    for step in steps:
-        parts.append(f"[{step.id}] {step.tool} {step.status.value}: {step.description}")
-        if step.output:
-            snippet = step.output[:4_000]
-            if len(step.output) > 4_000:
-                snippet += "\n  ... [truncated]"
-            parts.append(f"  output:\n{snippet}")
-        if step.error_detail:
-            fc = f"{step.failure_code}: " if step.failure_code else ""
-            parts.append(f"  error: {fc}{step.error_detail}")
-    text = "\n".join(parts)
-    if len(text) > _PRIOR_CONTEXT_MAX_CHARS:
-        text = "... [truncated prior log]\n" + text[-_PRIOR_CONTEXT_MAX_CHARS:]
-    hint = (
-        "Note: do not paste this log into search_workspace `query`; use a short literal search phrase only.\n\n"
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    kept: list[str] = []
+    for item in items:
+        normalized = item.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        kept.append(normalized)
+    return kept
+
+
+def _summarize_step_output(output: str) -> str:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    kept = _dedupe_keep_order(lines[:8])
+    return "\n".join(kept)
+
+
+def _step_to_context_block(step: PlanStep, *, priority: int, step_output_max_tokens: int) -> ContextBlock:
+    lines = [f"[{step.id}] {step.tool} {step.status.value}: {step.description}"]
+    if step.output:
+        snippet = _summarize_step_output(step.output)
+        if snippet:
+            if step_output_max_tokens > 0:
+                from uni_agent.context.token_budget import truncate_to_tokens
+
+                snippet = truncate_to_tokens(snippet, step_output_max_tokens)
+            lines.append(f"  output:\n{snippet}")
+    if step.error_detail:
+        fc = f"{step.failure_code}: " if step.failure_code else ""
+        lines.append(f"  error: {fc}{step.error_detail}")
+    return ContextBlock(kind="prior_step", text="\n".join(lines), priority=priority)
+
+
+def _format_prior_context(
+    steps: list[PlanStep],
+    *,
+    model_name: str | None = None,
+    max_tokens: int = _PRIOR_CONTEXT_MAX_TOKENS,
+    step_output_max_tokens: int = _PRIOR_STEP_OUTPUT_MAX_TOKENS,
+) -> str:
+    hint = ContextBlock(
+        kind="system",
+        text="Note: do not paste this log into search_workspace `query`; use a short literal search phrase only.",
+        priority=100,
+        pinned=True,
     )
-    return hint + text
+    if not steps:
+        return hint.text
+
+    older = steps[:-_PRIOR_CONTEXT_RECENT_STEPS]
+    recent = steps[-_PRIOR_CONTEXT_RECENT_STEPS:]
+    blocks: list[ContextBlock] = [hint]
+    if older:
+        failed_tools = _dedupe_keep_order([f"{step.tool}: {(step.error_detail or step.output or '').strip()[:180]}" for step in older if step.status == TaskStatus.FAILED])[:4]
+        lines = [f"Older rounds summary ({len(older)} steps):"]
+        if failed_tools:
+            lines.append("  failures:")
+            lines.extend(f"  - {item}" for item in failed_tools)
+        older_outputs = _dedupe_keep_order(
+            [next((line.strip() for line in step.output.splitlines() if line.strip()), "") for step in older if step.output]
+        )[:4]
+        if older_outputs:
+            lines.append("  outputs:")
+            lines.extend(f"  - {item[:180]}" for item in older_outputs if item)
+        blocks.append(ContextBlock(kind="memory_summary", text="\n".join(lines), priority=25))
+    for idx, step in enumerate(recent, start=1):
+        blocks.append(
+            _step_to_context_block(step, priority=80 - idx, step_output_max_tokens=step_output_max_tokens)
+        )
+    fitted = fit_blocks_to_budget(blocks, max_tokens=max_tokens, model_name=model_name)
+    return render_blocks(fitted, separator="\n\n")
 
 
 def _prefix_round(round_idx: int, steps: list[PlanStep]) -> list[PlanStep]:
@@ -70,6 +131,7 @@ class Orchestrator:
         stream_event: StreamEventCallback | None = None,
         goal_check: GoalCheckSynthesizer | None = None,
         plan_goal_check_max_replan_rounds: int = 0,
+        context_budgets: ContextBudgets | None = None,
     ):
         self.skill_loader = skill_loader
         self.tool_registry = tool_registry
@@ -82,6 +144,7 @@ class Orchestrator:
         self._stream_event = stream_event
         self._goal_check = goal_check
         self._plan_goal_check_max_replan_rounds = max(0, plan_goal_check_max_replan_rounds)
+        self._context_budgets = context_budgets or _DEFAULT_BUDGETS
 
     def _stream(self, event: dict[str, Any]) -> None:
         if self._stream_event is not None:
@@ -157,7 +220,15 @@ class Orchestrator:
             outcome_feedback: str | None = None
 
             while True:
-                prior = _format_prior_context(accumulated) if accumulated else None
+                prior = (
+                    _format_prior_context(
+                        accumulated,
+                        max_tokens=self._context_budgets.prior_context_max_tokens,
+                        step_output_max_tokens=self._context_budgets.prior_step_output_max_tokens,
+                    )
+                    if accumulated
+                    else None
+                )
                 plan = self.planner.create_plan(
                     task,
                     selected_skills,

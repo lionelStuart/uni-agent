@@ -8,6 +8,7 @@ from uni_agent.agent.planner import HeuristicPlanner
 from uni_agent.agent.pydantic_planner import PydanticAIPlanner
 from uni_agent.agent.goal_check import GoalCheckSynthesizer
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer
+from uni_agent.context.budgeting import derive_context_budgets
 from uni_agent.config.settings import (
     DelegateToolProfile,
     Settings,
@@ -62,6 +63,7 @@ def build_orchestrator(
         openai_base_url=settings.openai_base_url,
         openai_api_key=settings.openai_api_key,
     )
+    context_budgets = derive_context_budgets(settings.context_window_tokens)
     model_settings = None
     if settings.llm_temperature is not None:
         model_settings = {"temperature": settings.llm_temperature}
@@ -123,6 +125,7 @@ def build_orchestrator(
             retries=0,
             conclusion_system_prompt=settings.conclusion_system_prompt,
             global_system_prompt=settings.global_system_prompt,
+            context_budgets=context_budgets,
         )
     goal_check: GoalCheckSynthesizer | None = None
     if settings.plan_goal_check_enabled and provider.is_available():
@@ -132,6 +135,7 @@ def build_orchestrator(
             retries=0,
             goal_check_system_prompt=settings.plan_goal_check_system_prompt,
             global_system_prompt=settings.global_system_prompt,
+            context_budgets=context_budgets,
         )
     max_rounds = (
         max_failed_rounds_override
@@ -149,4 +153,5 @@ def build_orchestrator(
         stream_event=stream_event,
         goal_check=goal_check,
         plan_goal_check_max_replan_rounds=settings.plan_goal_check_max_replan_rounds,
+        context_budgets=context_budgets,
     )

@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="UNI_AGENT_", extra="ignore")
 
     model_name: str = Field(default="openai:gpt-4.1-mini")
+    context_window_tokens: int = Field(
+        default=256_000,
+        ge=8_192,
+        description=(
+            "Configured model context window in tokens. Used to derive token-aware compression budgets "
+            "for session_context, prior_context, goal-check, and conclusion digests."
+        ),
+    )
     openai_base_url: str | None = Field(
         default=None,
         description="OpenAI-compatible API base URL (e.g. https://host/v1). Maps to UNI_AGENT_OPENAI_BASE_URL.",

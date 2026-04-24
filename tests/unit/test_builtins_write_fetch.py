@@ -94,6 +94,8 @@ def test_http_fetch_normalizes_html_into_readable_text(mock_urlopen) -> None:
 
     assert "Title: Example News" in output
     assert "Description: Top story summary" in output
+    assert "Page Type: article" in output
+    assert "Key Points:" in output
     assert "Text: Example News Breaking headline Today something important happened." in output
 
 

@@ -77,6 +77,7 @@ def test_compress_and_session_context_includes_prior_runs() -> None:
     assert "done A" in ctx
     ctx2 = build_session_context_for_planner([e1, e2])
     assert "boom" in ctx2 or "failed" in ctx2.lower()
+    assert "findings" in ctx2 or "failures" in ctx2
 
 
 def test_task_result_to_entry_preview_truncates() -> None:
@@ -87,3 +88,23 @@ def test_task_result_to_entry_preview_truncates() -> None:
     )
     entry = task_result_to_entry(result)
     assert len(entry.output_preview) < len(result.output or "")
+
+
+def test_build_session_context_rolls_older_entries() -> None:
+    entries = [
+        ClientSessionRunEntry(
+            run_id=f"r{i}",
+            task=f"task {i}",
+            status="completed" if i % 2 else "failed",
+            key_findings=[f"finding {i}"],
+            failures=[f"failure {i}"] if i % 2 == 0 else [],
+            tools_used=["web_search", "http_fetch"],
+            summary=f"summary {i}",
+        )
+        for i in range(1, 8)
+    ]
+
+    ctx = build_session_context_for_planner(entries, max_tokens=240)
+
+    assert "Older session summary" in ctx
+    assert "task 7" in ctx

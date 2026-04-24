@@ -12,6 +12,7 @@ from uni_agent.agent.llm import EnvLLMProvider
 from uni_agent.agent.memory_llm_search import run_memory_search_llm
 from uni_agent.agent.orchestrator import StreamEventCallback
 from uni_agent.config.settings import Settings, get_settings
+from uni_agent.context.budgeting import derive_context_budgets
 from uni_agent.observability.client_session import (
     SessionStore,
     build_session_context_for_planner,
@@ -356,7 +357,12 @@ def run_interactive_client(
         from uni_agent.bootstrap import build_orchestrator
 
         orchestrator = build_orchestrator(stream_event=stream_fn)
-        ctx = build_session_context_for_planner(session.entries)
+        budgets = derive_context_budgets(settings.context_window_tokens)
+        ctx = build_session_context_for_planner(
+            session.entries,
+            max_tokens=budgets.session_context_max_tokens,
+            model_name=settings.model_name,
+        )
         try:
             result = orchestrator.run(task, session_context=ctx if ctx.strip() else None)
         except Exception as exc:

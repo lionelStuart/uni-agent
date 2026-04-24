@@ -91,6 +91,7 @@ from uni_agent.sdk import (
 - `storage_namespace`
 - `planner_backend`
 - `model_name`
+- `context_window_tokens`
 - `openai_base_url`
 - `openai_api_key`
 - `ca_bundle`
@@ -107,6 +108,7 @@ from uni_agent.sdk import (
 - `storage_namespace` 会把任务日志与 memory 目录隔离到 `<workspace>/.uni-agent/.../<namespace>/`
 - 当 `global_system_prompt` 未设置时，会基于 `name` 与 `description` 生成默认人设前缀
 - `ca_bundle` 用于给 `http_fetch` / `web_search` 提供显式 CA bundle；相对路径以 `workspace` 为基准
+- `context_window_tokens` 默认是 `256000`；用于推导 `session_context`、`prior_context`、goal-check 和 conclusion 的 token 压缩预算
 - `skip_tls_verify` 默认开启，`http_fetch` / `web_search` 会跳过 TLS 证书校验；如需恢复严格校验，可显式设为 `false` 或改用 `ca_bundle`
 - `plan_goal_check_enabled` 默认开启；当一轮工具都执行成功但答案仍不完整时，会触发一次 LLM 复核并推动后续重规划
 

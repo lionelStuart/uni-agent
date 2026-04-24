@@ -7,10 +7,14 @@ from pydantic_ai import Agent
 
 from uni_agent.agent.llm import LLMProvider, build_planner_model
 from uni_agent.agent.system_prompts import effective_conclusion_instructions
+from uni_agent.context.budgeting import ContextBudgets, derive_context_budgets
+from uni_agent.context.token_budget import ContextBlock, fit_blocks_to_budget, render_blocks, truncate_to_tokens
 from uni_agent.shared.models import PlanStep, TaskStatus
 
-_DIGEST_MAX_CHARS = 14_000
-_OUTPUT_SNIPPET = 2_500
+_DEFAULT_BUDGETS = derive_context_budgets(256_000)
+_CONCLUSION_MAX_TOKENS = _DEFAULT_BUDGETS.conclusion_max_tokens
+_STEP_OUTPUT_MAX_TOKENS = _DEFAULT_BUDGETS.conclusion_step_output_max_tokens
+_AGG_OUTPUT_MAX_TOKENS = _DEFAULT_BUDGETS.conclusion_aggregate_output_max_tokens
 
 
 class _ConclusionSchema(BaseModel):
@@ -25,35 +29,33 @@ def build_execution_digest(
     steps: list[PlanStep],
     output: str,
     error: str | None,
+    *,
+    max_tokens: int = _CONCLUSION_MAX_TOKENS,
+    step_output_max_tokens: int = _STEP_OUTPUT_MAX_TOKENS,
+    aggregate_output_max_tokens: int = _AGG_OUTPUT_MAX_TOKENS,
 ) -> str:
-    lines: list[str] = [
-        f"Task:\n{task}\n",
-        f"Final status: {status.value}\n",
+    blocks: list[ContextBlock] = [
+        ContextBlock(kind="task", text=f"Task:\n{task}", priority=100, pinned=True),
+        ContextBlock(kind="status", text=f"Final status: {status.value}", priority=100, pinned=True),
     ]
     if error:
-        lines.append(f"Top-level error (if any):\n{error}\n")
-    lines.append("Steps (chronological):")
+        blocks.append(ContextBlock(kind="error", text=f"Top-level error (if any):\n{error}", priority=95))
+    step_lines = ["Steps (chronological):"]
     for step in steps:
-        lines.append(
+        step_lines.append(
             f"- [{step.id}] {step.tool} {step.status.value}: {step.description}"
         )
         if step.output:
-            snip = step.output[:_OUTPUT_SNIPPET]
-            if len(step.output) > _OUTPUT_SNIPPET:
-                snip += "\n  ... [truncated]"
-            lines.append(f"  output:\n{snip}")
+            snip = truncate_to_tokens(step.output, step_output_max_tokens)
+            step_lines.append(f"  output:\n{snip}")
         if step.error_detail:
             fc = f"{step.failure_code}: " if step.failure_code else ""
-            lines.append(f"  error: {fc}{step.error_detail}")
+            step_lines.append(f"  error: {fc}{step.error_detail}")
+    blocks.append(ContextBlock(kind="prior_step", text="\n".join(step_lines), priority=75))
     if output.strip():
-        agg = output.strip()
-        if len(agg) > _OUTPUT_SNIPPET:
-            agg = agg[:_OUTPUT_SNIPPET] + "\n... [truncated]"
-        lines.append(f"\nAggregated tool output:\n{agg}")
-    text = "\n".join(lines)
-    if len(text) > _DIGEST_MAX_CHARS:
-        text = "... [truncated digest]\n" + text[-_DIGEST_MAX_CHARS:]
-    return text
+        agg = truncate_to_tokens(output.strip(), aggregate_output_max_tokens)
+        blocks.append(ContextBlock(kind="aggregate", text=f"Aggregated tool output:\n{agg}", priority=60))
+    return render_blocks(fit_blocks_to_budget(blocks, max_tokens), separator="\n\n")
 
 
 def fallback_run_conclusion(
@@ -100,8 +102,10 @@ class RunConclusionSynthesizer:
         retries: int = 0,
         conclusion_system_prompt: str | None = None,
         global_system_prompt: str | None = None,
+        context_budgets: ContextBudgets | None = None,
     ) -> None:
         self._provider = provider
+        self._context_budgets = context_budgets or _DEFAULT_BUDGETS
         instructions = effective_conclusion_instructions(
             override=conclusion_system_prompt,
             global_prefix=global_system_prompt,
@@ -132,7 +136,16 @@ class RunConclusionSynthesizer:
         output: str,
         error: str | None,
     ) -> str:
-        digest = build_execution_digest(task, status, steps, output, error)
+        digest = build_execution_digest(
+            task,
+            status,
+            steps,
+            output,
+            error,
+            max_tokens=self._context_budgets.conclusion_max_tokens,
+            step_output_max_tokens=self._context_budgets.conclusion_step_output_max_tokens,
+            aggregate_output_max_tokens=self._context_budgets.conclusion_aggregate_output_max_tokens,
+        )
         prompt = f"Execution log:\n{digest}\n\nWrite the conclusion for the user."
         result = self._agent.run_sync(prompt)
         return result.output.conclusion.strip()

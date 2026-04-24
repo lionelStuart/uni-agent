@@ -7,11 +7,14 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from uni_agent.context.budgeting import derive_context_budgets
+from uni_agent.context.token_budget import ContextBlock, fit_blocks_to_budget, render_blocks, count_tokens
 from uni_agent.shared.models import TaskResult
 
 _SESSION_ENTRY_SUMMARY_MAX_CHARS = 2000
-_SESSION_PLANNER_CONTEXT_MAX_CHARS = 12_000
 _SESSION_PLANNER_MAX_ENTRIES = 20
+_SESSION_PLANNER_CONTEXT_MAX_TOKENS = derive_context_budgets(256_000).session_context_max_tokens
+_SESSION_RECENT_ENTRY_COUNT = 4
 
 
 def new_session_id() -> str:
@@ -31,6 +34,10 @@ class ClientSessionRunEntry(BaseModel):
     conclusion: str | None = None
     output_preview: str = ""
     plan_step_count: int = 0
+    tools_used: list[str] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
+    failures: list[str] = Field(default_factory=list)
+    next_hints: list[str] = Field(default_factory=list)
     summary: str = Field(default="", description="Compressed line for later planner context in this session.")
 
 
@@ -127,25 +134,13 @@ def compress_task_result_for_session(result: TaskResult) -> str:
     if len(head_task) > 240:
         head_task = head_task[:240] + "…"
     chunks.append(f"status={result.status.value}; task={head_task!r}")
-    if result.conclusion:
-        c = result.conclusion.strip().replace("\n", " ")
-        if len(c) > 1100:
-            c = c[:1100] + "…"
-        chunks.append(c)
     tools = [s.tool for s in result.plan if s.tool]
     if tools:
         chunks.append("tools=" + ",".join(tools[:8]))
-    if result.error and not result.conclusion:
-        e = result.error.strip().replace("\n", " ")
-        if len(e) > 400:
-            e = e[:400] + "…"
-        chunks.append(f"error={e}")
-    out = (result.output or "").strip()
-    if out and len(result.conclusion or "") < 80:
-        first = out.splitlines()[0] if out else ""
-        if len(first) > 360:
-            first = first[:360] + "…"
-        chunks.append(f"out_head={first!r}")
+    chunks.extend(_extract_key_findings(result)[:2])
+    failures = _extract_failures(result)
+    if failures:
+        chunks.append(f"failures={'; '.join(failures[:2])}")
     text = " | ".join(chunks)
     if len(text) > _SESSION_ENTRY_SUMMARY_MAX_CHARS:
         text = text[: _SESSION_ENTRY_SUMMARY_MAX_CHARS] + "…"
@@ -156,26 +151,134 @@ def entry_summary_for_planner(entry: ClientSessionRunEntry) -> str:
     if entry.summary.strip():
         return entry.summary.strip()
     parts = [f"status={entry.status}; task={entry.task[:200]!r}"]
-    if entry.conclusion:
+    if entry.key_findings:
+        parts.append("findings=" + "; ".join(entry.key_findings[:2]))
+    elif entry.conclusion:
         parts.append(entry.conclusion[:600] + ("…" if len(entry.conclusion) > 600 else ""))
+    if entry.failures:
+        parts.append("failures=" + "; ".join(entry.failures[:2]))
     elif entry.error:
         parts.append(entry.error[:300])
     return " | ".join(parts)[:_SESSION_ENTRY_SUMMARY_MAX_CHARS]
 
 
-def build_session_context_for_planner(entries: list[ClientSessionRunEntry]) -> str:
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    kept: list[str] = []
+    for item in items:
+        normalized = item.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        kept.append(normalized)
+    return kept
+
+
+def _extract_key_findings(result: TaskResult) -> list[str]:
+    findings: list[str] = []
+    if result.conclusion:
+        findings.append(result.conclusion.strip().replace("\n", " ")[:600])
+    for step in result.plan:
+        if step.output:
+            head = next((line.strip() for line in step.output.splitlines() if line.strip()), "")
+            if head:
+                findings.append(head[:280])
+        if len(findings) >= 4:
+            break
+    out = (result.output or "").strip()
+    if out:
+        first = next((line.strip() for line in out.splitlines() if line.strip()), "")
+        if first:
+            findings.append(first[:280])
+    return _dedupe_keep_order(findings)
+
+
+def _extract_failures(result: TaskResult) -> list[str]:
+    failures: list[str] = []
+    for step in result.plan:
+        if step.status.value != "failed":
+            continue
+        detail = (step.error_detail or step.output or step.description).strip().replace("\n", " ")
+        if detail:
+            failures.append(f"{step.tool}: {detail[:240]}")
+    if result.error:
+        failures.append(result.error.strip().replace("\n", " ")[:280])
+    return _dedupe_keep_order(failures)
+
+
+def _extract_next_hints(result: TaskResult) -> list[str]:
+    if result.status.value == "completed":
+        return []
+    failed = _extract_failures(result)
+    if failed:
+        return [f"Avoid repeating: {failed[0]}"]
+    return []
+
+
+def _entry_to_context_block(entry: ClientSessionRunEntry, *, index: int, recent: bool) -> ContextBlock:
+    lines = [f"{index}. [{entry.run_id or '?'}] status={entry.status}; task={entry.task[:200]!r}"]
+    if entry.tools_used:
+        lines.append(f"  tools: {', '.join(entry.tools_used[:8])}")
+    if entry.key_findings:
+        lines.append("  findings:")
+        lines.extend(f"  - {item}" for item in entry.key_findings[:3])
+    if entry.failures:
+        lines.append("  failures:")
+        lines.extend(f"  - {item}" for item in entry.failures[:2])
+    if entry.next_hints:
+        lines.append("  next_hints:")
+        lines.extend(f"  - {item}" for item in entry.next_hints[:2])
+    priority = 90 - index if recent else 30 - index
+    return ContextBlock(kind="recent_turn" if recent else "memory_summary", text="\n".join(lines), priority=priority)
+
+
+def _rolling_summary_block(entries: list[ClientSessionRunEntry]) -> ContextBlock | None:
+    if not entries:
+        return None
+    findings = _dedupe_keep_order([item for entry in entries for item in entry.key_findings])[:5]
+    failures = _dedupe_keep_order([item for entry in entries for item in entry.failures])[:4]
+    tasks = [entry.task[:100] for entry in entries[-3:]]
+    lines = [f"Older session summary ({len(entries)} runs):"]
+    if tasks:
+        lines.append("  recent_old_tasks: " + " | ".join(tasks))
+    if findings:
+        lines.append("  confirmed_findings:")
+        lines.extend(f"  - {item}" for item in findings)
+    if failures:
+        lines.append("  repeated_failures:")
+        lines.extend(f"  - {item}" for item in failures)
+    return ContextBlock(kind="memory_summary", text="\n".join(lines), priority=20)
+
+
+def build_session_context_for_planner(
+    entries: list[ClientSessionRunEntry],
+    *,
+    max_tokens: int = _SESSION_PLANNER_CONTEXT_MAX_TOKENS,
+    model_name: str | None = None,
+) -> str:
     """Concatenate compressed summaries for prior client turns (excludes current turn)."""
     if not entries:
         return ""
     slice_ = entries[-_SESSION_PLANNER_MAX_ENTRIES :]
-    lines: list[str] = []
-    for i, e in enumerate(slice_, start=1):
-        summ = entry_summary_for_planner(e)
-        rid = e.run_id or "?"
-        lines.append(f"{i}. [{rid}] {summ}")
-    text = "\n".join(lines)
-    if len(text) > _SESSION_PLANNER_CONTEXT_MAX_CHARS:
-        text = "...[truncated session memory]\n" + text[-_SESSION_PLANNER_CONTEXT_MAX_CHARS:]
+    older = slice_[:-_SESSION_RECENT_ENTRY_COUNT]
+    recent = slice_[-_SESSION_RECENT_ENTRY_COUNT:]
+    blocks: list[ContextBlock] = []
+    rolling = _rolling_summary_block(older)
+    if rolling is not None:
+        blocks.append(rolling)
+    for i, entry in enumerate(recent, start=max(1, len(slice_) - len(recent) + 1)):
+        blocks.append(_entry_to_context_block(entry, index=i, recent=True))
+    fitted = fit_blocks_to_budget(blocks, max_tokens=max_tokens, model_name=model_name)
+    text = render_blocks(fitted, separator="\n\n")
+    if count_tokens(text, model_name) > max_tokens:
+        return render_blocks(
+            fit_blocks_to_budget(
+                [ContextBlock(kind="memory_summary", text=text, priority=10)],
+                max_tokens=max_tokens,
+                model_name=model_name,
+            ),
+            separator="\n\n",
+        )
     return text
 
 
@@ -193,5 +296,9 @@ def task_result_to_entry(result: TaskResult) -> ClientSessionRunEntry:
         conclusion=result.conclusion,
         output_preview=preview,
         plan_step_count=len(result.plan),
+        tools_used=[step.tool for step in result.plan if step.tool][:8],
+        key_findings=_extract_key_findings(result),
+        failures=_extract_failures(result),
+        next_hints=_extract_next_hints(result),
         summary=summary,
     )

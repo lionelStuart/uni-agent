@@ -20,6 +20,7 @@ def test_agent_config_to_settings_default_persona(tmp_path: Path) -> None:
     g = s.global_system_prompt or ""
     assert "CodeBot" in g
     assert "Help with the repo." in g
+    assert s.context_window_tokens == 256_000
 
 
 def test_agent_config_explicit_global_overrides_name(tmp_path: Path) -> None:
@@ -96,3 +97,17 @@ def test_client_run_delegates(tmp_path: Path) -> None:
     c = AgentClient(cfg, orchestrator=mock_orch)
     c.run("hello")
     mock_orch.run.assert_called_once_with("hello", plan_override=None, session_context=None)
+
+
+def test_agent_config_propagates_context_window_tokens(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    cfg = AgentConfig(
+        name="CodeBot",
+        workspace=tmp_path,
+        skills_dir=tmp_path / "skills",
+        context_window_tokens=128_000,
+    )
+
+    s = cfg.to_settings()
+
+    assert s.context_window_tokens == 128_000
