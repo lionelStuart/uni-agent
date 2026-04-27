@@ -263,7 +263,21 @@ def register_builtin_handlers(
         if not path_value or not isinstance(path_value, str):
             raise ValueError("file_read requires a 'path' string.")
         target = _resolve_workspace_path(resolved_workspace, path_value)
-        return _truncate(target.read_text(encoding="utf-8"))
+        content = target.read_text(encoding="utf-8")
+        start_line = arguments.get("start_line")
+        max_lines = arguments.get("max_lines")
+        if start_line is None and max_lines is None:
+            return _truncate(content)
+        if not isinstance(start_line, int) or start_line < 1:
+            raise ValueError("file_read 'start_line' must be a positive integer when using line slicing.")
+        if max_lines is None:
+            max_lines = 120
+        if not isinstance(max_lines, int) or max_lines < 1:
+            raise ValueError("file_read 'max_lines' must be a positive integer.")
+        max_lines = min(max_lines, 1_000)
+        lines = content.splitlines()
+        start_idx = start_line - 1
+        return "\n".join(lines[start_idx : start_idx + max_lines])
 
     def file_write(arguments: dict) -> str:
         path_value = arguments.get("path")
@@ -536,6 +550,12 @@ def register_builtin_handlers(
             effective = "".join(parts)
 
             settings = get_settings()
+            child_settings = settings.model_copy(
+                update={
+                    "plan_goal_check_enabled": False,
+                    "run_conclusion_llm": False,
+                }
+            )
             child_max = (
                 settings.delegate_max_failed_rounds
                 if settings.delegate_max_failed_rounds is not None
@@ -549,6 +569,7 @@ def register_builtin_handlers(
                     enable_delegate_tool=False,
                     tool_profile=settings.delegate_tool_profile,
                     max_failed_rounds_override=child_max,
+                    settings=child_settings,
                 )
                 child_result = child_orch.run(effective, parent_run_id=parent_rid)
                 text = format_delegate_result(child=child_result, parent_run_id=parent_rid)

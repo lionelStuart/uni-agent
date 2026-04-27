@@ -1,0 +1,24 @@
+id: delegate-explicit
+description: Explicit delegate_task requests should create a child run and return structured child metadata.
+task: use delegate_task to read README.md and summarize the first heading
+plan: plans/delegate-readonly.yaml
+assertions:
+  status: completed
+  output_contains:
+    - CHILD_RUN_ID=
+  tool_payload_contains:
+    child_run_id: completed
+  required_tools:
+    - delegate_task
+  expected_tool_sequence:
+    - delegate_task
+  max_steps: 1
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0
+weights:
+  goal: 0.30
+  trajectory: 0.25
+  efficiency: 0.10
+  stability: 0.10
+  safety: 0.05
+  llm_judge: 0.20

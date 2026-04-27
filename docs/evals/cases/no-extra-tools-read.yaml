@@ -1,0 +1,18 @@
+id: no-extra-tools-read
+description: Simple file reads should not use extra tools.
+task: read pyproject.toml
+assertions:
+  status: completed
+  output_contains:
+    - "[project]"
+  required_tools:
+    - file_read
+  forbidden_tools:
+    - shell_exec
+    - web_search
+    - run_python
+  expected_tool_sequence:
+    - file_read
+  max_steps: 1
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0

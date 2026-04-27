@@ -1,0 +1,16 @@
+id: read-readme
+description: Read README through file_read with no shell fallback.
+task: read README.md
+assertions:
+  status: completed
+  output_contains:
+    - "# uni-agent"
+  required_tools:
+    - file_read
+  forbidden_tools:
+    - shell_exec
+  expected_tool_sequence:
+    - file_read
+  max_steps: 2
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0

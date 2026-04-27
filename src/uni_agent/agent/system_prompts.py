@@ -1,4 +1,4 @@
-"""Built-in system prompts for LLM-backed agent components (planner, run conclusion, goal check).
+"""Built-in system prompts for LLM-backed agent components (planner, answer, run conclusion, goal check).
 
 Override per role via settings; optional global prefix is prepended to each effective prompt.
 """
@@ -74,6 +74,15 @@ DEFAULT_CONCLUSION_SYSTEM_PROMPT = (
     "state that answer directly and do not contradict yourself (do not say the result was not identified)."
 )
 
+DEFAULT_ANSWER_SYSTEM_PROMPT = (
+    "You write the final answer to the user's task for a local tool-using agent. "
+    "Use the same language as the task when it is clearly Chinese or English. "
+    "Base the answer only on the provided execution log; do not invent files, numbers, or actions. "
+    "Do not merely paste raw tool output unless the user explicitly asked to read a file verbatim. "
+    "If the user asked to explain, summarize, analyze, or inspect code, synthesize a concise explanation from the evidence. "
+    "If the task failed, clearly state what failed and what evidence is available."
+)
+
 
 def _strip_optional(text: str | None) -> str | None:
     if text is None:
@@ -105,6 +114,15 @@ def effective_conclusion_instructions(
     global_prefix: str | None,
 ) -> str:
     base = _strip_optional(override) or DEFAULT_CONCLUSION_SYSTEM_PROMPT
+    return with_global_prefix(base, global_prefix)
+
+
+def effective_answer_instructions(
+    *,
+    override: str | None,
+    global_prefix: str | None,
+) -> str:
+    base = _strip_optional(override) or DEFAULT_ANSWER_SYSTEM_PROMPT
     return with_global_prefix(base, global_prefix)
 
 

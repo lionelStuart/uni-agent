@@ -1,0 +1,12 @@
+steps:
+  - id: step-1
+    description: Count CSV rows and summarize numeric total.
+    tool: run_python
+    arguments:
+      source: |
+        import csv
+        from pathlib import Path
+
+        rows = list(csv.DictReader(Path("docs/evals/fixtures/sample.csv").open()))
+        total = sum(int(row["amount"]) for row in rows)
+        print(f"rows={len(rows)} total={total}")

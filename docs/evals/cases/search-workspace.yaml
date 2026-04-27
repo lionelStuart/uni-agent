@@ -1,0 +1,14 @@
+id: search-workspace
+description: Search workspace for a known project term.
+task: search workspace for ToolRegistry
+assertions:
+  status: completed
+  output_contains:
+    - ToolRegistry
+  required_tools:
+    - search_workspace
+  forbidden_tools:
+    - shell_exec
+  max_steps: 2
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0

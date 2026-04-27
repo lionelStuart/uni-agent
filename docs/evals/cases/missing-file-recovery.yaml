@@ -1,0 +1,25 @@
+id: missing-file-recovery
+description: Missing file failures should be explicit and bounded.
+task: read docs/evals/fixtures/does-not-exist.txt and explain what happened
+plan: plans/missing-file.yaml
+assertions:
+  status: failed
+  output_contains:
+    - does-not-exist.txt
+  required_tools:
+    - file_read
+  forbidden_tools:
+    - shell_exec
+  expected_tool_sequence:
+    - file_read
+  max_steps: 1
+  max_failed_steps: 1
+  max_verifier_failures: 1
+  max_loop_guard_triggers: 0
+weights:
+  goal: 0.30
+  trajectory: 0.25
+  efficiency: 0.15
+  stability: 0.10
+  safety: 0.10
+  llm_judge: 0.10

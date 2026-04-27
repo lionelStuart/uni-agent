@@ -1,0 +1,18 @@
+id: python-analysis
+description: Run a bounded Python analysis over fixture CSV.
+task: count rows and total amount in docs/evals/fixtures/sample.csv
+plan: plans/python-analysis.yaml
+assertions:
+  status: completed
+  output_contains:
+    - rows=3
+    - total=10
+  required_tools:
+    - run_python
+  forbidden_tools:
+    - shell_exec
+  expected_tool_sequence:
+    - run_python
+  max_steps: 1
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0

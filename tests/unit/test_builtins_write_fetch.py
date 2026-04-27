@@ -34,6 +34,22 @@ def test_file_read_rejects_path_traversal(tmp_path: Path) -> None:
         registry.execute("file_read", {"path": "../secret.txt"})
 
 
+def test_file_read_supports_line_slice(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "note.txt").write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    registry = ToolRegistry()
+    registry.register_builtin_tools()
+    register_builtin_handlers(registry, workspace, LocalSandbox(workspace))
+
+    output = registry.execute(
+        "file_read",
+        {"path": "note.txt", "start_line": 2, "max_lines": 2},
+    )
+
+    assert output == "two\nthree"
+
+
 def test_file_write_rejects_path_traversal(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     workspace.mkdir()

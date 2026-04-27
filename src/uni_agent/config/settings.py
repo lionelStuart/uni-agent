@@ -107,12 +107,20 @@ class Settings(BaseSettings):
         default=None,
         description="Override run-conclusion LLM system prompt; default is built-in DEFAULT_CONCLUSION_SYSTEM_PROMPT.",
     )
+    answer_system_prompt: str | None = Field(
+        default=None,
+        description="Override final answer LLM system prompt; default is built-in DEFAULT_ANSWER_SYSTEM_PROMPT.",
+    )
     llm_temperature: float | None = None
     llm_retries: int = 1
     orchestrator_max_failed_rounds: int = 5
     run_conclusion_llm: bool = Field(
         default=True,
         description="If true and an LLM is configured, synthesize a final natural-language conclusion after the run.",
+    )
+    run_answer_llm: bool = Field(
+        default=True,
+        description="If true and an LLM is configured, synthesize a final user-facing answer after tool execution.",
     )
     plan_goal_check_enabled: bool = Field(
         default=True,

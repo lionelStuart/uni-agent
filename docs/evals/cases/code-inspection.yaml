@@ -1,0 +1,17 @@
+id: code-inspection
+description: Answer a code-inspection question using repository tools.
+task: explain how ToolRegistry.execute_result handles string handlers and ToolResult handlers
+plan: plans/code-inspection-registry.yaml
+assertions:
+  status: completed
+  output_contains:
+    - execute_result
+    - ToolResult
+  required_tools:
+    - search_workspace
+    - file_read
+  forbidden_tools:
+    - shell_exec
+  max_steps: 4
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0

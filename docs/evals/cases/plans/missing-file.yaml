@@ -1,0 +1,6 @@
+steps:
+  - id: step-1
+    description: Try to read a missing file and surface the failure clearly.
+    tool: file_read
+    arguments:
+      path: docs/evals/fixtures/does-not-exist.txt

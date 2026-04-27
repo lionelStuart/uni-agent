@@ -15,7 +15,7 @@
 | `ToolResult` | 工具执行结果 envelope：`status`、`summary`、`text`、`payload`、`artifacts`、`warnings`、`retryable`、`error_code`；旧 handler 返回字符串时自动包装。 |
 | `SkillSpec` | 本地 skill：元数据（`name`、`version`、`description`、`triggers`、`priority`）、`allowed_tools` / `required_tools`（可选；**不**限制规划器可见工具）、路径 `path`；加载器还会填充 `instruction_text`、`reference_paths`、`script_paths`、`skill_load_format`。 |
 | `PlanStep` | **原子执行单元**：`id`、`description`、`tool`、`skill`（可选）、`arguments`、`status`、`output`、失败时的 `error_*` / `failure_code`，以及 `tool_result` / `verifications`。 |
-| `TaskResult` | **单次 run 的结果**：`run_id`、`task`、`status`、`selected_skills`、`available_tools`、**累积的** `plan`、`output`、`error`、`orchestrator_failed_rounds`、`conclusion`、`working_memory`、`run_stats`。 |
+| `TaskResult` | **单次 run 的结果**：`run_id`、`task`、`status`、`selected_skills`、`available_tools`、**累积的** `plan`、`output`、面向用户的 `answer`、`error`、`orchestrator_failed_rounds`、`conclusion`、`working_memory`、`run_stats`。 |
 | `TaskRunRecord` | 落盘封装：`run_id` + `TaskResult`（供回放）。 |
 
 关系可概括为：**TaskResult 由多条 PlanStep 组成；每步绑定一个 tool，并可标注来源 skill；工具与 skill 的静态描述分别对应 ToolSpec 与 SkillSpec。**
@@ -54,9 +54,10 @@
 ### 2.4 收尾
 
 - 拼接各步 `output` 为总 `output`；失败时写入 `error`。
+- `answer`：先用规则 fallback 产出最终答案；若配置 LLM，则基于执行 digest 合成面向用户的回答。它与 `output` 分离，避免把原始工具日志直接当作最终回复。
 - `conclusion`：先规则摘要，若配置 LLM 再合成。
 - `run_stats`：汇总状态、工具、失败类型、verifier 结果、goal-check mismatch 与 loop-guard 命中情况，便于后续失败分析。
-- 保存 `TaskResult` 至任务日志目录；可选通过 `stream_event` 输出 NDJSON 事件（`run_begin`、`round_plan`、`step_finished`、`round_failed`、`conclusion_*`、`run_end`）。
+- 保存 `TaskResult` 至任务日志目录；可选通过 `stream_event` 输出 NDJSON 事件（`run_begin`、`round_plan`、`step_finished`、`round_failed`、`answer_*`、`conclusion_*`、`run_end`）。
 
 ### 2.5 内置工具与 Skill 的关系
 
@@ -95,4 +96,5 @@
 - [设计文档](./设计文档.md) — 目标边界、架构图、模块职责
 - [开发文档](./开发文档.md) — 实现细节与目录
 - [Agent 研发预研与最佳实践](./Agent研发预研与最佳实践.md) — 外部 best practice、harness 与 loop 方法论
+- [Agent Eval 轻量评测体系](./AgentEval轻量评测体系.md) — 确定性综合打分与 case schema
 - [Skills 目录与 SKILL 说明](./Skills目录与SKILL说明.md) — skill 磁盘布局与 `SKILL.md` 约定

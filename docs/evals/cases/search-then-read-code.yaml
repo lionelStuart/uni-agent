@@ -1,0 +1,17 @@
+id: search-then-read-code
+description: Locate Executor and explain failure handling from code.
+task: find the Executor.execute implementation and explain how it records failure_code and retries
+plan: plans/search-then-read-executor.yaml
+assertions:
+  status: completed
+  output_contains:
+    - failure_code
+    - max_step_retries
+  required_tools:
+    - search_workspace
+    - file_read
+  forbidden_tools:
+    - shell_exec
+  max_steps: 4
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0

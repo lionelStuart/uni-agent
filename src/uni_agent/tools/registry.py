@@ -38,7 +38,10 @@ def _core_builtin_specs() -> tuple[ToolSpec, ...]:
         ),
         ToolSpec(
             name="file_read",
-            description="Read a file from the workspace.",
+            description=(
+                "Read a file from the workspace. Args: `path` (required), optional `start_line` "
+                "(1-based) and `max_lines` to read a focused slice instead of the file head."
+            ),
         ),
         ToolSpec(
             name="file_write",

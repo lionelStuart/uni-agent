@@ -37,7 +37,9 @@ def test_to_settings_non_path_fields_match_snapshot(tmp_path: Path, _snapshot_no
         global_system_prompt=snap["global_system_prompt"],
         planner_instructions=snap["planner_instructions"],
         conclusion_system_prompt=snap["conclusion_system_prompt"],
+        answer_system_prompt=snap["answer_system_prompt"],
         run_conclusion_llm=snap["run_conclusion_llm"],
+        run_answer_llm=snap["run_answer_llm"],
     )
     s = cfg.to_settings()
     dumped = s.model_dump(mode="json")

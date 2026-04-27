@@ -8,7 +8,10 @@ from typing import Any
 import typer
 
 from uni_agent.agent.plan_loader import load_plan_file
+from uni_agent.agent.llm import EnvLLMProvider
 from uni_agent.bootstrap import build_orchestrator
+from uni_agent.evals.llm_judge import EvalLLMJudge
+from uni_agent.evals.runner import run_eval_suite
 from uni_agent.observability.logging import configure_logging
 from uni_agent.skills.loader import SkillLoader
 from uni_agent.config.settings import get_settings
@@ -125,6 +128,72 @@ def replay_task(
             if step.output:
                 typer.echo(step.output)
     typer.echo(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
+
+
+@app.command("eval")
+def eval_cmd(
+    path: Path = typer.Argument(
+        ...,
+        help="Eval case YAML file or directory containing YAML cases.",
+        exists=True,
+        readable=True,
+    ),
+    output_format: str = typer.Option(
+        "summary",
+        "--format",
+        "-f",
+        help="Output shape: summary or json.",
+    ),
+    llm_review: bool = typer.Option(
+        False,
+        "--llm-review/--no-llm-review",
+        help="Enable existing LLM goal-check/conclusion hooks in the agent being evaluated.",
+    ),
+    llm_judge: bool = typer.Option(
+        True,
+        "--llm-judge/--no-llm-judge",
+        help="Use the configured default LLM to judge final task quality as part of the score.",
+    ),
+) -> None:
+    if output_format not in {"summary", "json"}:
+        raise typer.BadParameter("format must be one of: summary, json")
+    settings = get_settings()
+    if not llm_review:
+        settings = settings.model_copy(
+            update={
+                "plan_goal_check_enabled": False,
+                "run_conclusion_llm": False,
+            }
+        )
+    orchestrator = build_orchestrator(stream_event=None, settings=settings)
+    judge = None
+    if llm_judge:
+        model_settings = {"temperature": settings.llm_temperature} if settings.llm_temperature is not None else None
+        judge = EvalLLMJudge(
+            provider=EnvLLMProvider(
+                settings.model_name,
+                openai_base_url=settings.openai_base_url,
+                openai_api_key=settings.openai_api_key,
+            ),
+            model_settings=model_settings,
+            retries=settings.llm_retries,
+        )
+    result = run_eval_suite(path, orchestrator, llm_judge=judge, workspace=settings.workspace)
+    if output_format == "json":
+        typer.echo(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
+        return
+    typer.echo(
+        f"cases={result.cases_total} passed={result.cases_passed} "
+        f"pass_rate={result.pass_rate:.2%} average_score={result.average_score:.2f}"
+    )
+    for case in result.results:
+        mark = "PASS" if case.passed else "FAIL"
+        typer.echo(
+            f"{mark}\t{case.id}\tscore={case.overall_score:.2f}\t"
+            f"status={case.status}\tsteps={case.steps_total}\trun_id={case.run_id or ''}"
+        )
+        for failure in case.failures:
+            typer.echo(f"  - {failure}")
 
 
 if __name__ == "__main__":

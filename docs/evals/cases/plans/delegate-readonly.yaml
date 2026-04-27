@@ -1,0 +1,7 @@
+steps:
+  - id: step-1
+    description: Delegate a focused read-only README inspection to a child agent.
+    tool: delegate_task
+    arguments:
+      task: read README.md and summarize the first heading
+      context: Use readonly analysis only.

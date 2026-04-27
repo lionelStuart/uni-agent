@@ -10,5 +10,7 @@
   "global_system_prompt": "GSP snapshot line.",
   "planner_instructions": "PI snapshot line.",
   "conclusion_system_prompt": "CSP snapshot line.",
-  "run_conclusion_llm": false
+  "answer_system_prompt": "ASP snapshot line.",
+  "run_conclusion_llm": false,
+  "run_answer_llm": false
 }

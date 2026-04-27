@@ -1,0 +1,10 @@
+steps:
+  - id: step-1
+    description: Write a deterministic eval artifact.
+    tool: file_write
+    arguments:
+      path: .uni-agent/eval-artifacts/eval-note.md
+      content: |
+        # Eval Note
+
+        artifact-ok

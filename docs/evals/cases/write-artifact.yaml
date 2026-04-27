@@ -1,0 +1,17 @@
+id: write-artifact
+description: Create a deterministic artifact and verify file end state.
+task: create .uni-agent/eval-artifacts/eval-note.md with heading Eval Note and marker artifact-ok
+plan: plans/write-artifact.yaml
+assertions:
+  status: completed
+  output_contains:
+    - Wrote
+  file_contains:
+    .uni-agent/eval-artifacts/eval-note.md: artifact-ok
+  required_tools:
+    - file_write
+  expected_tool_sequence:
+    - file_write
+  max_steps: 1
+  max_failed_steps: 0
+  max_loop_guard_triggers: 0

@@ -23,6 +23,7 @@ def format_delegate_result(
 ) -> str:
     st = child.status.value
     concl = (child.conclusion or "").strip()
+    answer = (child.answer or "").strip()
     out = child.output or ""
     snippet = truncate(out, OUTPUT_SNIPPET_CHARS).strip()
     pr = parent_run_id or ""
@@ -31,6 +32,9 @@ def format_delegate_result(
         f"CHILD_RUN_ID={cr}",
         f"PARENT_RUN_ID={pr}",
         f"STATUS={st}",
+        "ANSWER:",
+        answer or "(none)",
+        "",
         "CONCLUSION:",
         concl or "(none)",
         "",
@@ -48,6 +52,7 @@ def delegate_result_payload(*, child: TaskResult, parent_run_id: str | None) -> 
         "parent_run_id": parent_run_id or "",
         "status": child.status.value,
         "conclusion": child.conclusion or "",
+        "answer": child.answer or "",
         "output_snippet": truncate(child.output or "", OUTPUT_SNIPPET_CHARS).strip(),
         "error": child.error or "",
         "child_run_stats": child.run_stats,
@@ -78,6 +83,7 @@ def delegate_exception_payload(exc: BaseException, *, parent_run_id: str | None)
         "parent_run_id": parent_run_id or "",
         "status": TaskStatus.FAILED.value,
         "conclusion": "",
+        "answer": "",
         "output_snippet": "",
         "error": str(exc),
         "child_run_stats": {},

@@ -20,6 +20,7 @@ from uni_agent.agent.executor import Executor
 from uni_agent.agent.loop_guard import LoopGuard
 from uni_agent.agent.planner import Planner
 from uni_agent.agent.goal_check import GoalCheckSynthesizer
+from uni_agent.agent.answer_synthesis import RunAnswerSynthesizer, fallback_run_answer
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer, fallback_run_conclusion
 from uni_agent.agent.run_stats import build_run_stats
 from uni_agent.agent.verifier import StepVerifier
@@ -157,6 +158,7 @@ class Orchestrator:
         max_step_retries: int = 0,
         max_failed_rounds: int = 5,
         conclusion_synthesizer: RunConclusionSynthesizer | None = None,
+        answer_synthesizer: RunAnswerSynthesizer | None = None,
         stream_event: StreamEventCallback | None = None,
         goal_check: GoalCheckSynthesizer | None = None,
         plan_goal_check_max_replan_rounds: int = 0,
@@ -170,6 +172,7 @@ class Orchestrator:
         self.task_store = task_store
         self.max_failed_rounds = max(1, max_failed_rounds)
         self._conclusion_synthesizer = conclusion_synthesizer
+        self._answer_synthesizer = answer_synthesizer
         self._stream_event = stream_event
         self._goal_check = goal_check
         self._plan_goal_check_max_replan_rounds = max(0, plan_goal_check_max_replan_rounds)
@@ -417,6 +420,17 @@ class Orchestrator:
             )
 
         final_status = TaskStatus.COMPLETED if success else TaskStatus.FAILED
+        self._stream({"type": "answer_begin", "run_id": run_id})
+        answer = fallback_run_answer(task, final_status, executed_plan, output, error)
+        if self._answer_synthesizer is not None and self._answer_synthesizer.is_available():
+            try:
+                answer = self._answer_synthesizer.synthesize(
+                    task, final_status, executed_plan, output, error
+                )
+            except Exception:
+                pass
+        self._stream({"type": "answer_done", "run_id": run_id, "answer": answer})
+
         self._stream({"type": "conclusion_begin", "run_id": run_id})
         conclusion = fallback_run_conclusion(task, final_status, executed_plan, output, error)
         if self._conclusion_synthesizer is not None and self._conclusion_synthesizer.is_available():
@@ -436,6 +450,7 @@ class Orchestrator:
             available_tools=[tool.name for tool in available_tools],
             plan=executed_plan,
             output=output,
+            answer=answer,
             error=error,
             orchestrator_failed_rounds=failed_rounds,
             goal_check_mismatch_rounds=goal_mismatch_count,

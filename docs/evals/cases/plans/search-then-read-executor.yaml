@@ -1,0 +1,11 @@
+steps:
+  - id: step-1
+    description: Search for the Executor implementation.
+    tool: search_workspace
+    arguments:
+      query: class Executor
+  - id: step-2
+    description: Read the Executor implementation.
+    tool: file_read
+    arguments:
+      path: src/uni_agent/agent/executor.py

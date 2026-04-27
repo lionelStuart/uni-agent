@@ -2,7 +2,7 @@
 
 可加载可插拔 **Skills** 的通用 **Agent Client**，同时提供：
 
-- 命令行入口：`uni-agent run|client|replay|skills`
+- 命令行入口：`uni-agent run|client|replay|skills|eval`
 - 进程内 SDK：`uni_agent.sdk`
 - 本地沙箱执行：`LocalSandbox`
 - 基于本地目录的 skill 自动发现与注入
@@ -24,12 +24,13 @@
 - 本地记忆：`memory_search`、交互式 `memory search`、空闲自动抽取到 `.uni-agent/memory`
 - DuckDuckGo 网页搜索：`web_search` 内置工具可返回标题、URL 和摘要片段
 - 子代理委派：`delegate_task` 启动单层子 `Orchestrator.run`，支持只读工具集
-- 历史结论：结果中包含 `conclusion` 字段，支持规则摘要和可选 LLM 结论
+- 最终答案与历史结论：结果中包含面向用户的 `answer` 和运行摘要 `conclusion`，均支持规则 fallback 与可选 LLM 合成
+- 轻量评测：`uni-agent eval` 批量运行 YAML case，并基于目标、轨迹、效率、稳定性、安全和默认 LLM judge 给出综合评分
 
 ## 内置工具
 
 - `shell_exec`
-- `file_read`
+- `file_read`（支持 `start_line` / `max_lines` 读取代码片段）
 - `file_write`
 - `http_fetch`
 - `web_search`
@@ -306,6 +307,7 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 - [docs/Agent研发预研与最佳实践.md](docs/Agent研发预研与最佳实践.md)
 - [docs/uni-agent差距分析与改进计划.md](docs/uni-agent差距分析与改进计划.md)
 - [docs/AgentLoop硬化开发计划.md](docs/AgentLoop硬化开发计划.md)
+- [docs/AgentEval轻量评测体系.md](docs/AgentEval轻量评测体系.md)
 - [docs/sdk-streaming.md](docs/sdk-streaming.md)
 - [docs/sdk-agents.md](docs/sdk-agents.md)
 - [docs/sdk-concurrency.md](docs/sdk-concurrency.md)

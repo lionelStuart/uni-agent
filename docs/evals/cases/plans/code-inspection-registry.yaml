@@ -1,0 +1,13 @@
+steps:
+  - id: step-1
+    description: Search for execute_result in the registry.
+    tool: search_workspace
+    arguments:
+      query: execute_result
+  - id: step-2
+    description: Read the ToolRegistry.execute_result implementation slice.
+    tool: file_read
+    arguments:
+      path: src/uni_agent/tools/registry.py
+      start_line: 132
+      max_lines: 22

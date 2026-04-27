@@ -81,6 +81,7 @@ class TaskResult(BaseModel):
     available_tools: list[str] = Field(default_factory=list)
     plan: list[PlanStep] = Field(default_factory=list)
     output: str = ""
+    answer: str = ""
     error: str | None = None
     orchestrator_failed_rounds: int = 0
     goal_check_mismatch_rounds: int = Field(

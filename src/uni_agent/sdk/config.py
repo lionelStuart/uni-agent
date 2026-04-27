@@ -54,7 +54,9 @@ class AgentConfig(BaseModel):
     )
     planner_instructions: str | None = None
     conclusion_system_prompt: str | None = None
+    answer_system_prompt: str | None = None
     run_conclusion_llm: bool | None = None
+    run_answer_llm: bool | None = None
     plan_goal_check_enabled: bool | None = Field(
         default=None,
         description="Overrides UNI_AGENT_PLAN_GOAL_CHECK_ENABLED when not None.",
@@ -119,6 +121,7 @@ class AgentConfig(BaseModel):
             "global_system_prompt": gsp,
             "planner_instructions": self.planner_instructions,
             "conclusion_system_prompt": self.conclusion_system_prompt,
+            "answer_system_prompt": self.answer_system_prompt,
         }
         if mem is not None:
             kwargs["memory_dir"] = mem
@@ -135,6 +138,8 @@ class AgentConfig(BaseModel):
         kwargs["skip_tls_verify"] = self.skip_tls_verify
         if self.run_conclusion_llm is not None:
             kwargs["run_conclusion_llm"] = self.run_conclusion_llm
+        if self.run_answer_llm is not None:
+            kwargs["run_answer_llm"] = self.run_answer_llm
         if self.plan_goal_check_enabled is not None:
             kwargs["plan_goal_check_enabled"] = self.plan_goal_check_enabled
         if self.observability_langfuse_enabled is not None:

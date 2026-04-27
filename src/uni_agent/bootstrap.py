@@ -6,6 +6,7 @@ from uni_agent.agent.llm import EnvLLMProvider
 from uni_agent.agent.orchestrator import Orchestrator, StreamEventCallback
 from uni_agent.agent.planner import HeuristicPlanner
 from uni_agent.agent.pydantic_planner import PydanticAIPlanner
+from uni_agent.agent.answer_synthesis import RunAnswerSynthesizer
 from uni_agent.agent.goal_check import GoalCheckSynthesizer
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer
 from uni_agent.context.budgeting import derive_context_budgets
@@ -132,6 +133,16 @@ def build_orchestrator(
             global_system_prompt=settings.global_system_prompt,
             context_budgets=context_budgets,
         )
+    answer_syn: RunAnswerSynthesizer | None = None
+    if settings.run_answer_llm and provider.is_available():
+        answer_syn = RunAnswerSynthesizer(
+            provider=provider,
+            model_settings=model_settings,
+            retries=0,
+            answer_system_prompt=settings.answer_system_prompt,
+            global_system_prompt=settings.global_system_prompt,
+            context_budgets=context_budgets,
+        )
     goal_check: GoalCheckSynthesizer | None = None
     if settings.plan_goal_check_enabled and provider.is_available():
         goal_check = GoalCheckSynthesizer(
@@ -155,6 +166,7 @@ def build_orchestrator(
         max_step_retries=settings.tool_step_retries,
         max_failed_rounds=max_rounds,
         conclusion_synthesizer=conclusion_syn,
+        answer_synthesizer=answer_syn,
         stream_event=composed_stream_event,
         goal_check=goal_check,
         plan_goal_check_max_replan_rounds=settings.plan_goal_check_max_replan_rounds,
