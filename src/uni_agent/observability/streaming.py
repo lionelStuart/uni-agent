@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from uni_agent.observability.logging import get_logger
@@ -34,3 +35,19 @@ def compose_stream_callbacks(
                 log.exception("stream_callback_failed", callback=str(cb))
 
     return _merged
+
+
+def enrich_stream_event(
+    event: dict[str, Any],
+    *,
+    session_id: str,
+    source: str,
+    workspace: str,
+    observed_at: str | None = None,
+) -> dict[str, Any]:
+    enriched = dict(event)
+    enriched.setdefault("session_id", session_id)
+    enriched.setdefault("source", source)
+    enriched.setdefault("workspace", workspace)
+    enriched.setdefault("observed_at", observed_at or datetime.now(timezone.utc).isoformat())
+    return enriched

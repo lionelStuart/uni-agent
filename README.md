@@ -90,6 +90,12 @@ from uni_agent.sdk import (
 - `workspace`
 - `skills_dir`
 - `storage_namespace`
+- `observability_sqlite_path`
+- `observability_session_id`
+- `observability_source`
+- `observability_webhook_url`
+- `observability_webhook_timeout_seconds`
+- `observability_webhook_headers_json`
 - `planner_backend`
 - `model_name`
 - `context_window_tokens`
@@ -114,6 +120,9 @@ from uni_agent.sdk import (
 
 - `to_settings()` 会生成显式 `Settings`，避免多 agent 共进程时混用同一套环境变量
 - `storage_namespace` 会把任务日志与 memory 目录隔离到 `<workspace>/.uni-agent/.../<namespace>/`
+- `observability_sqlite_path` 默认落到 `<workspace>/.uni-agent/observability/observability.db`，用于保存 runs / sessions / stream events
+- `observability_session_id` 可把多次 SDK `run()` 聚合到同一个逻辑会话；interactive `client` 会自动使用当前 session id
+- `observability_webhook_url` 开启后，会把每条 `stream_event` 以 JSON `POST` 到外部系统；可用 `observability_webhook_headers_json` 追加鉴权头
 - 当 `global_system_prompt` 未设置时，会基于 `name` 与 `description` 生成默认人设前缀
 - `ca_bundle` 用于给 `http_fetch` / `web_search` 提供显式 CA bundle；相对路径以 `workspace` 为基准
 - `context_window_tokens` 默认是 `256000`；用于推导 `session_context`、`prior_context`、goal-check、answer 和 conclusion 的 token 压缩预算；`answer` 会使用比短摘要更大的证据预算
@@ -176,6 +185,7 @@ manifest 支持 `.json`、`.yaml`、`.yml`，根对象必须包含非空 `agents
 - `uni-agent client`
 - `uni-agent replay`
 - `uni-agent skills`
+- `uni-agent webui`
 
 ### `run`
 
@@ -276,6 +286,12 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 - `UNI_AGENT_OBSERVABILITY_LANGFUSE_DEBUG`
 - `UNI_AGENT_OBSERVABILITY_LANGFUSE_TRACE_NAME`
 - `UNI_AGENT_OBSERVABILITY_LANGFUSE_TRACE_INPUT_MAX_CHARS`
+- `UNI_AGENT_OBSERVABILITY_SQLITE_PATH`
+- `UNI_AGENT_OBSERVABILITY_SESSION_ID`
+- `UNI_AGENT_OBSERVABILITY_SOURCE`
+- `UNI_AGENT_OBSERVABILITY_WEBHOOK_URL`
+- `UNI_AGENT_OBSERVABILITY_WEBHOOK_TIMEOUT_SECONDS`
+- `UNI_AGENT_OBSERVABILITY_WEBHOOK_HEADERS_JSON`
 
 其中：
 
@@ -285,6 +301,8 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 - `UNI_AGENT_DELEGATE_TOOL_PROFILE=readonly` 时，子代理只暴露只读工具
 - `UNI_AGENT_PLAN_GOAL_CHECK_ENABLED` 默认是 `true`；每轮全成功执行后会额外做一次 LLM 目标检查，不满足时继续重规划
 - `UNI_AGENT_OBSERVABILITY_LANGFUSE_ENABLED` 可在不改事件监听代码的情况下把 `stream_event` 持久化到 Langfuse；未装依赖时自动跳过
+- `UNI_AGENT_OBSERVABILITY_SQLITE_PATH` 默认写到 workspace 下的 SQLite；`uni-agent webui` 直接读取这份 DB 展示会话与运行记录
+- `UNI_AGENT_OBSERVABILITY_SESSION_ID` 可把 CLI / SDK 多次 run 聚合进同一逻辑 session；未设置时单次 `run` 会自动按 `run_id` 分组
 
 ## 输出目录
 

@@ -15,12 +15,16 @@ from uni_agent.config.settings import (
     Settings,
     get_settings,
     parse_http_fetch_allowed_hosts,
+    parse_observability_webhook_headers,
     parse_sandbox_allowed_commands,
 )
 from uni_agent.observability.logging import configure_logging
 from uni_agent.observability.langfuse import build_langfuse_stream_handler
+from uni_agent.observability.sqlite_sink import build_sqlite_stream_handler
+from uni_agent.observability.sqlite_store import safe_create_sqlite_store
 from uni_agent.observability.streaming import compose_stream_callbacks
 from uni_agent.observability.task_store import TaskStore
+from uni_agent.observability.webhook import build_webhook_stream_handler
 from uni_agent.sandbox.runner import LocalSandbox, prompt_tty_approve_disallowed_command
 from uni_agent.skills.loader import SkillLoader
 from uni_agent.tools.builtins import register_builtin_handlers
@@ -48,8 +52,23 @@ def build_orchestrator(
     :param max_failed_rounds_override: If set, replaces ``orchestrator_max_failed_rounds`` for this instance.
     """
     settings = settings or get_settings()
+    sqlite_store = safe_create_sqlite_store(settings.observability_sqlite_path)
     composed_stream_event = compose_stream_callbacks(
-        [stream_event, build_langfuse_stream_handler(settings)]
+        [
+            stream_event,
+            build_langfuse_stream_handler(settings),
+            build_webhook_stream_handler(
+                webhook_url=settings.observability_webhook_url,
+                timeout_seconds=settings.observability_webhook_timeout_seconds,
+                headers=parse_observability_webhook_headers(settings.observability_webhook_headers_json),
+            ),
+            build_sqlite_stream_handler(
+                sqlite_store,
+                session_id=settings.observability_session_id,
+                source=settings.observability_source,
+                workspace=str(settings.workspace.resolve()),
+            ),
+        ]
     )
     configure_logging(settings.log_level)
     tool_registry = ToolRegistry()
@@ -122,7 +141,13 @@ def build_orchestrator(
             if provider.is_available()
             else heuristic
         )
-    task_store = TaskStore(settings.task_log_dir)
+    task_store = TaskStore(
+        settings.task_log_dir,
+        sqlite_store=sqlite_store,
+        session_id=settings.observability_session_id,
+        source=settings.observability_source,
+        workspace=str(settings.workspace.resolve()),
+    )
     conclusion_syn: RunConclusionSynthesizer | None = None
     if settings.run_conclusion_llm and provider.is_available():
         conclusion_syn = RunConclusionSynthesizer(

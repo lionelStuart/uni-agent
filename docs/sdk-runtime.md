@@ -29,13 +29,18 @@
 
 - `AgentClient(config, orchestrator=mock_orchestrator, ...)` 可传入**已构造**的 `Orchestrator`（或 `MagicMock`），**跳过**内部 `build_orchestrator`，用于单元测试或桩对象。`on_event` 在传入自定义 `orchestrator` 时**不会**被再次用于构建（以注入实例为准）。生产路径一般省略该参数，由 `build_orchestrator` 完成装配。
 
-## Langfuse 可观测透传
+## 可观测透传
 
 - `AgentConfig` 的以下字段会透传到 `Settings` 并在 `build_orchestrator` 中参与 `stream_event` 组合：
+  `observability_sqlite_path`, `observability_session_id`, `observability_source`,
+  `observability_webhook_url`, `observability_webhook_timeout_seconds`,
+  `observability_webhook_headers_json`,
   `observability_langfuse_enabled`, `observability_langfuse_host`,
   `observability_langfuse_public_key`, `observability_langfuse_secret_key`,
   `observability_langfuse_debug`, `observability_langfuse_trace_name`,
   `observability_langfuse_trace_input_max_chars`。
+- 若配置了 `observability_sqlite_path`（默认即 workspace 下 SQLite），`build_orchestrator` 会自动把 runs / sessions / stream events 落盘，供 `uni-agent webui` 展示。
+- 若配置了 `observability_webhook_url`，每条 `stream_event` 都会被 JSON `POST` 到该地址；这与用户自定义 `on_event`、Langfuse sink 一起组合执行。
 - 若 `observability_langfuse_enabled=true` 且 `langfuse` 依赖与凭据可用，`build_orchestrator` 会自动把 Langfuse sink 与用户 `stream_event` 合并；子代理流事件也会通过 delegate 包装元数据后走同样通道。
 
 ## 与 CLI 的关系

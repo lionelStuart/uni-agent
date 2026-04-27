@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -10,6 +11,9 @@ from pydantic import BaseModel, Field
 from uni_agent.context.budgeting import derive_context_budgets
 from uni_agent.context.token_budget import ContextBlock, fit_blocks_to_budget, render_blocks, count_tokens
 from uni_agent.shared.models import TaskResult
+
+if TYPE_CHECKING:
+    from uni_agent.observability.sqlite_store import ObservabilitySqliteStore
 
 _SESSION_ENTRY_SUMMARY_MAX_CHARS = 2000
 _SESSION_PLANNER_MAX_ENTRIES = 20
@@ -55,8 +59,9 @@ class ClientSession(BaseModel):
 
 
 class SessionStore:
-    def __init__(self, base_dir: Path):
+    def __init__(self, base_dir: Path, *, sqlite_store: ObservabilitySqliteStore | None = None):
         self.base_dir = base_dir.resolve()
+        self.sqlite_store = sqlite_store
 
     def _path(self, session_id: str) -> Path:
         safe = session_id.replace("/", "").replace("\\", "")
@@ -69,6 +74,8 @@ class SessionStore:
         session.updated_at = datetime.now(timezone.utc).isoformat()
         path = self._path(session.id)
         path.write_text(session.model_dump_json(indent=2), encoding="utf-8")
+        if self.sqlite_store is not None:
+            self.sqlite_store.save_client_session(session)
         return path
 
     def load(self, session_id: str) -> ClientSession:

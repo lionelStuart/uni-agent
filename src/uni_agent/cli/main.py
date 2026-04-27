@@ -13,6 +13,8 @@ from uni_agent.bootstrap import build_orchestrator
 from uni_agent.evals.llm_judge import EvalLLMJudge
 from uni_agent.evals.runner import run_eval_suite
 from uni_agent.observability.logging import configure_logging
+from uni_agent.observability.sqlite_store import safe_create_sqlite_store
+from uni_agent.observability.webui import serve_webui
 from uni_agent.skills.loader import SkillLoader
 from uni_agent.config.settings import get_settings
 
@@ -76,6 +78,22 @@ def client_cmd(
     from uni_agent.cli.client_shell import run_interactive_client
 
     run_interactive_client(stream=stream, session_id=session)
+
+
+@app.command("webui")
+def webui_cmd(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host for the observability WebUI."),
+    port: int = typer.Option(8765, "--port", help="Bind port for the observability WebUI."),
+) -> None:
+    settings = get_settings()
+    store = safe_create_sqlite_store(settings.observability_sqlite_path)
+    if store is None:
+        raise typer.Exit(code=1)
+    typer.echo(
+        f"Observability WebUI listening on http://{host}:{port} "
+        f"(db={settings.observability_sqlite_path})"
+    )
+    serve_webui(store, host=host, port=port)
 
 
 @app.command("replay")

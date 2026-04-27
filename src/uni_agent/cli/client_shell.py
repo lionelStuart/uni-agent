@@ -24,6 +24,7 @@ from uni_agent.observability.local_memory import (
     persist_incremental_for_client_session,
     search_memory_directory,
 )
+from uni_agent.observability.sqlite_store import safe_create_sqlite_store
 
 _memory_activity_gen = 0
 _memory_idle_lock = threading.Lock()
@@ -222,7 +223,8 @@ def run_interactive_client(
     session_id: str | None = None,
 ) -> None:
     settings = get_settings()
-    store = SessionStore(settings.session_dir)
+    sqlite_store = safe_create_sqlite_store(settings.observability_sqlite_path)
+    store = SessionStore(settings.session_dir, sqlite_store=sqlite_store)
     workspace = settings.workspace.resolve()
 
     if session_id:
@@ -366,7 +368,13 @@ def run_interactive_client(
         started = datetime.now(timezone.utc).isoformat()
         from uni_agent.bootstrap import build_orchestrator
 
-        orchestrator = build_orchestrator(stream_event=stream_fn)
+        run_settings = settings.model_copy(
+            update={
+                "observability_session_id": session.id,
+                "observability_source": "client",
+            }
+        )
+        orchestrator = build_orchestrator(stream_event=stream_fn, settings=run_settings)
         budgets = derive_context_budgets(settings.context_window_tokens)
         ctx = build_session_context_for_planner(
             session.entries,

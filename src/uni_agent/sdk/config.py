@@ -31,6 +31,30 @@ class AgentConfig(BaseModel):
             "memory under <workspace>/.uni-agent/memory/<namespace>/ to isolate multiple agents in one process."
         ),
     )
+    observability_sqlite_path: Path | None = Field(
+        default=None,
+        description="Optional SQLite path for local observability data; relative paths resolve under workspace.",
+    )
+    observability_session_id: str | None = Field(
+        default=None,
+        description="Optional logical session id used to group multiple SDK runs in observability sinks.",
+    )
+    observability_source: str | None = Field(
+        default=None,
+        description="Optional source label for observability sinks; defaults to sdk when unset.",
+    )
+    observability_webhook_url: str | None = Field(
+        default=None,
+        description="Optional webhook endpoint that receives each stream event as JSON.",
+    )
+    observability_webhook_timeout_seconds: float | None = Field(
+        default=None,
+        description="Optional timeout for webhook POST requests.",
+    )
+    observability_webhook_headers_json: str | None = Field(
+        default=None,
+        description="Optional JSON object string of extra webhook headers.",
+    )
     model_name: str | None = Field(default=None, description="Overrides UNI_AGENT_MODEL_NAME when not None.")
     context_window_tokens: int | None = Field(
         default=None,
@@ -125,6 +149,17 @@ class AgentConfig(BaseModel):
         }
         if mem is not None:
             kwargs["memory_dir"] = mem
+        if self.observability_sqlite_path is not None:
+            kwargs["observability_sqlite_path"] = self.observability_sqlite_path
+        if self.observability_session_id is not None:
+            kwargs["observability_session_id"] = self.observability_session_id
+        kwargs["observability_source"] = self.observability_source or "sdk"
+        if self.observability_webhook_url is not None:
+            kwargs["observability_webhook_url"] = self.observability_webhook_url
+        if self.observability_webhook_timeout_seconds is not None:
+            kwargs["observability_webhook_timeout_seconds"] = self.observability_webhook_timeout_seconds
+        if self.observability_webhook_headers_json is not None:
+            kwargs["observability_webhook_headers_json"] = self.observability_webhook_headers_json
         if self.model_name is not None:
             kwargs["model_name"] = self.model_name
         if self.context_window_tokens is not None:

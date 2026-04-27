@@ -44,6 +44,36 @@ class Settings(BaseSettings):
     skills_dir: Path = Field(default_factory=lambda: Path("skills").resolve())
     task_log_dir: Path = Field(default_factory=lambda: Path(".uni-agent/runs").resolve())
     session_dir: Path = Field(default_factory=lambda: Path(".uni-agent/sessions").resolve())
+    observability_sqlite_path: Path | None = Field(
+        default=None,
+        description=(
+            "SQLite path for local observability data. Unset → "
+            "``<UNI_AGENT_WORKSPACE>/.uni-agent/observability/observability.db``. "
+            "Relative paths resolve under ``workspace``."
+        ),
+    )
+    observability_session_id: str | None = Field(
+        default=None,
+        description="Optional logical session id used to group runs/events in observability sinks.",
+    )
+    observability_source: str = Field(
+        default="cli",
+        description="Logical source label written to observability sinks (for example cli / client / sdk).",
+    )
+    observability_webhook_url: str | None = Field(
+        default=None,
+        description="Optional webhook endpoint that receives every stream event as JSON.",
+    )
+    observability_webhook_timeout_seconds: float = Field(
+        default=3.0,
+        ge=0.1,
+        le=30.0,
+        description="Timeout for webhook POST requests in seconds.",
+    )
+    observability_webhook_headers_json: str = Field(
+        default="",
+        description="Optional JSON object string of extra HTTP headers sent with webhook events.",
+    )
     memory_dir: Path | None = Field(
         default=None,
         description=(
@@ -192,6 +222,13 @@ class Settings(BaseSettings):
             p = Path(md)
             anchored = p.resolve() if p.is_absolute() else (ws / p).resolve()
         object.__setattr__(self, "memory_dir", anchored)
+        db = self.observability_sqlite_path
+        if db is None:
+            anchored_db = (ws / ".uni-agent" / "observability" / "observability.db").resolve()
+        else:
+            p = Path(db)
+            anchored_db = p.resolve() if p.is_absolute() else (ws / p).resolve()
+        object.__setattr__(self, "observability_sqlite_path", anchored_db)
         ca = self.ca_bundle
         if ca is not None:
             p = Path(ca)
@@ -210,3 +247,17 @@ def parse_sandbox_allowed_commands(raw: str) -> set[str]:
 
 def parse_http_fetch_allowed_hosts(raw: str) -> frozenset[str]:
     return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
+
+def parse_observability_webhook_headers(raw: str) -> dict[str, str]:
+    if not raw.strip():
+        return {}
+    import json
+
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("UNI_AGENT_OBSERVABILITY_WEBHOOK_HEADERS_JSON must be a JSON object.")
+    headers: dict[str, str] = {}
+    for key, value in parsed.items():
+        headers[str(key)] = str(value)
+    return headers

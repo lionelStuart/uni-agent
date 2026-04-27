@@ -111,3 +111,24 @@ def test_agent_config_propagates_context_window_tokens(tmp_path: Path) -> None:
     s = cfg.to_settings()
 
     assert s.context_window_tokens == 128_000
+
+
+def test_agent_config_propagates_observability_settings(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    cfg = AgentConfig(
+        name="CodeBot",
+        workspace=tmp_path,
+        skills_dir=tmp_path / "skills",
+        observability_session_id="sdk-session",
+        observability_webhook_url="https://example.test/hook",
+        observability_webhook_timeout_seconds=5.0,
+        observability_webhook_headers_json='{"x-token":"1"}',
+    )
+
+    s = cfg.to_settings()
+
+    assert s.observability_source == "sdk"
+    assert s.observability_session_id == "sdk-session"
+    assert s.observability_webhook_url == "https://example.test/hook"
+    assert s.observability_webhook_timeout_seconds == 5.0
+    assert s.observability_webhook_headers_json == '{"x-token":"1"}'
