@@ -59,6 +59,34 @@ class AgentConfig(BaseModel):
         default=None,
         description="Overrides UNI_AGENT_PLAN_GOAL_CHECK_ENABLED when not None.",
     )
+    observability_langfuse_enabled: bool | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_OBSERVABILITY_LANGFUSE_ENABLED when not None.",
+    )
+    observability_langfuse_host: str | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_OBSERVABILITY_LANGFUSE_HOST when not None.",
+    )
+    observability_langfuse_public_key: str | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_OBSERVABILITY_LANGFUSE_PUBLIC_KEY when not None.",
+    )
+    observability_langfuse_secret_key: str | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_OBSERVABILITY_LANGFUSE_SECRET_KEY when not None.",
+    )
+    observability_langfuse_debug: bool | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_OBSERVABILITY_LANGFUSE_DEBUG when not None.",
+    )
+    observability_langfuse_trace_name: str | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_OBSERVABILITY_LANGFUSE_TRACE_NAME when not None.",
+    )
+    observability_langfuse_trace_input_max_chars: int | None = Field(
+        default=None,
+        description="Overrides UNI_AGENT_OBSERVABILITY_LANGFUSE_TRACE_INPUT_MAX_CHARS when not None.",
+    )
 
     def to_settings(self) -> Settings:
         """Build explicit ``Settings`` for this profile (call-site kwargs override same-named env)."""
@@ -109,4 +137,20 @@ class AgentConfig(BaseModel):
             kwargs["run_conclusion_llm"] = self.run_conclusion_llm
         if self.plan_goal_check_enabled is not None:
             kwargs["plan_goal_check_enabled"] = self.plan_goal_check_enabled
+        if self.observability_langfuse_enabled is not None:
+            kwargs["observability_langfuse_enabled"] = self.observability_langfuse_enabled
+        if self.observability_langfuse_host is not None:
+            kwargs["observability_langfuse_host"] = self.observability_langfuse_host
+        if self.observability_langfuse_public_key is not None:
+            kwargs["observability_langfuse_public_key"] = self.observability_langfuse_public_key
+        if self.observability_langfuse_secret_key is not None:
+            kwargs["observability_langfuse_secret_key"] = self.observability_langfuse_secret_key
+        if self.observability_langfuse_debug is not None:
+            kwargs["observability_langfuse_debug"] = self.observability_langfuse_debug
+        if self.observability_langfuse_trace_name is not None:
+            kwargs["observability_langfuse_trace_name"] = self.observability_langfuse_trace_name
+        if self.observability_langfuse_trace_input_max_chars is not None:
+            kwargs["observability_langfuse_trace_input_max_chars"] = (
+                self.observability_langfuse_trace_input_max_chars
+            )
         return Settings(**kwargs)

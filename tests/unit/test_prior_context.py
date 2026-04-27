@@ -20,6 +20,9 @@ def test_prior_context_rolls_older_steps_and_keeps_recent_details() -> None:
     assert "Older rounds summary" in text
     assert "[r9-step-1]" in text
     assert "search_workspace `query`" in text
+    assert "[system_hint]" in text
+    assert "[rolling_summary]" in text
+    assert "[recent_step]" in text
 
 
 def test_prior_context_dedupes_repeated_older_outputs() -> None:
@@ -37,3 +40,4 @@ def test_prior_context_dedupes_repeated_older_outputs() -> None:
     text = _format_prior_context(steps)
 
     assert text.count("same output line") < len(steps)
+    assert "[deduped]" in text

@@ -24,6 +24,39 @@ class ContextBlock:
     metadata: dict[str, str] = field(default_factory=dict)
 
 
+def _append_label(block: ContextBlock, label: str) -> None:
+    existing = {
+        item.strip().lower()
+        for item in (block.metadata.get("labels") or "").split(",")
+        if item.strip()
+    }
+    normalized = label.strip().lower()
+    if normalized and normalized not in existing:
+        existing.add(normalized)
+        block.metadata["labels"] = ",".join(sorted(existing))
+
+
+def _format_block_labels(block: ContextBlock) -> str:
+    explicit = [item.strip().lower() for item in (block.metadata.get("labels") or "").split(",") if item.strip()]
+    if explicit:
+        labels = explicit
+    else:
+        labels = []
+    fallback = {
+        "recent_turn": "recent_turn",
+        "memory_summary": "rolling_summary",
+        "system": "system_hint",
+        "prior_step": "recent_step",
+        "task": "task",
+        "status": "status",
+        "error": "error",
+        "aggregate": "aggregate",
+    }
+    if not labels and block.kind in fallback:
+        labels = [fallback[block.kind]]
+    return "".join(f"[{label}]" for label in labels) + (" " if labels else "")
+
+
 def count_tokens(text: str, model_name: str | None = None) -> int:
     normalized = (text or "").strip()
     if not normalized:
@@ -117,6 +150,7 @@ def fit_blocks_to_budget(
             if truncated.strip():
                 block.text = truncated
                 block.token_estimate = count_tokens(truncated, model_name)
+                _append_label(block, "truncated")
                 kept.append((idx, block))
                 remaining -= block.token_estimate
 
@@ -125,4 +159,11 @@ def fit_blocks_to_budget(
 
 
 def render_blocks(blocks: Iterable[ContextBlock], *, separator: str = "\n\n") -> str:
-    return separator.join(block.text.strip() for block in blocks if block.text.strip()).strip()
+    rendered = []
+    for block in blocks:
+        text = block.text.strip()
+        if not text:
+            continue
+        prefix = _format_block_labels(block)
+        rendered.append(f"{prefix}{text}" if prefix else text)
+    return separator.join(rendered).strip()

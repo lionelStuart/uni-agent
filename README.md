@@ -101,6 +101,13 @@ from uni_agent.sdk import (
 - `planner_instructions`
 - `conclusion_system_prompt`
 - `run_conclusion_llm`
+- `observability_langfuse_enabled`
+- `observability_langfuse_host`
+- `observability_langfuse_public_key`
+- `observability_langfuse_secret_key`
+- `observability_langfuse_debug`
+- `observability_langfuse_trace_name`
+- `observability_langfuse_trace_input_max_chars`
 
 说明：
 
@@ -111,6 +118,7 @@ from uni_agent.sdk import (
 - `context_window_tokens` 默认是 `256000`；用于推导 `session_context`、`prior_context`、goal-check 和 conclusion 的 token 压缩预算
 - `skip_tls_verify` 默认开启，`http_fetch` / `web_search` 会跳过 TLS 证书校验；如需恢复严格校验，可显式设为 `false` 或改用 `ca_bundle`
 - `plan_goal_check_enabled` 默认开启；当一轮工具都执行成功但答案仍不完整时，会触发一次 LLM 复核并推动后续重规划
+- `observability_langfuse_enabled` 与凭据字段用于将 `stream_event`（以及子代理事件）导入 Langfuse；未安装 `langfuse` 包时自动降级
 
 ### `AgentRegistry` 语义
 
@@ -260,6 +268,13 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 - `UNI_AGENT_GLOBAL_SYSTEM_PROMPT`
 - `UNI_AGENT_PLANNER_INSTRUCTIONS`
 - `UNI_AGENT_CONCLUSION_SYSTEM_PROMPT`
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_ENABLED`
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_HOST`
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_PUBLIC_KEY`
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_SECRET_KEY`
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_DEBUG`
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_TRACE_NAME`
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_TRACE_INPUT_MAX_CHARS`
 
 其中：
 
@@ -268,6 +283,7 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 - `UNI_AGENT_SKIP_TLS_VERIFY` 默认是 `true`，会让 `http_fetch` 与 `web_search` 忽略 TLS 证书错误；如需严格校验，请显式设为 `false`，并优先使用 `UNI_AGENT_CA_BUNDLE`
 - `UNI_AGENT_DELEGATE_TOOL_PROFILE=readonly` 时，子代理只暴露只读工具
 - `UNI_AGENT_PLAN_GOAL_CHECK_ENABLED` 默认是 `true`；每轮全成功执行后会额外做一次 LLM 目标检查，不满足时继续重规划
+- `UNI_AGENT_OBSERVABILITY_LANGFUSE_ENABLED` 可在不改事件监听代码的情况下把 `stream_event` 持久化到 Langfuse；未装依赖时自动跳过
 
 ## 输出目录
 

@@ -75,6 +75,7 @@ def test_compress_and_session_context_includes_prior_runs() -> None:
     assert "done A" in e1.summary
     ctx = build_session_context_for_planner([e1])
     assert "done A" in ctx
+    assert "[recent_turn]" in ctx
     ctx2 = build_session_context_for_planner([e1, e2])
     assert "boom" in ctx2 or "failed" in ctx2.lower()
     assert "findings" in ctx2 or "failures" in ctx2
@@ -108,3 +109,23 @@ def test_build_session_context_rolls_older_entries() -> None:
 
     assert "Older session summary" in ctx
     assert "task 7" in ctx
+    assert "[recent_turn]" in ctx
+
+
+def test_session_context_marks_rolling_summary_and_deduped_entries() -> None:
+    entries = [
+        ClientSessionRunEntry(
+            run_id=f"r{i}",
+            task=f"task {i}",
+            status="completed" if i % 2 else "failed",
+            key_findings=["same finding", "same finding"],
+            failures=["error dup", "error dup"] if i % 2 == 0 else [],
+            summary=f"summary {i}",
+        )
+        for i in range(1, 7)
+    ]
+
+    ctx = build_session_context_for_planner(entries, max_tokens=300)
+
+    assert "[rolling_summary]" in ctx
+    assert "[deduped]" in ctx

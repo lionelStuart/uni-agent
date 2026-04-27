@@ -132,6 +132,36 @@ class Settings(BaseSettings):
         default=None,
         description="Optional override for the goal-check LLM system prompt (default: DEFAULT_GOAL_CHECK_SYSTEM_PROMPT).",
     )
+    observability_langfuse_enabled: bool = Field(
+        default=False,
+        description=(
+            "If true, stream events are exported to Langfuse when the langfuse package and credentials are available."
+        ),
+    )
+    observability_langfuse_host: str | None = Field(
+        default=None,
+        description="Optional Langfuse host endpoint. If unset, Langfuse client default is used.",
+    )
+    observability_langfuse_public_key: str | None = Field(
+        default=None,
+        description="Langfuse public API key. Required for export unless service uses other auth mechanism.",
+    )
+    observability_langfuse_secret_key: str | None = Field(
+        default=None,
+        description="Langfuse secret API key. Required for export unless service uses other auth mechanism.",
+    )
+    observability_langfuse_debug: bool = Field(
+        default=False,
+        description="Enable verbose Langfuse debug logging in the sink.",
+    )
+    observability_langfuse_trace_name: str = Field(
+        default="uni-agent-run",
+        description="Base name used for run traces in Langfuse.",
+    )
+    observability_langfuse_trace_input_max_chars: int = Field(
+        default=4000,
+        description="Max chars to serialize task metadata into each Langfuse trace input payload.",
+    )
     delegate_max_failed_rounds: int | None = Field(
         default=None,
         description=(

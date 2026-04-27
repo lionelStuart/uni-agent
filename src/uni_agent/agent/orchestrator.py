@@ -68,7 +68,12 @@ def _step_to_context_block(step: PlanStep, *, priority: int, step_output_max_tok
     if step.error_detail:
         fc = f"{step.failure_code}: " if step.failure_code else ""
         lines.append(f"  error: {fc}{step.error_detail}")
-    return ContextBlock(kind="prior_step", text="\n".join(lines), priority=priority)
+    return ContextBlock(
+        kind="prior_step",
+        text="\n".join(lines),
+        priority=priority,
+        metadata={"labels": "recent_step"},
+    )
 
 
 def _format_prior_context(
@@ -83,26 +88,46 @@ def _format_prior_context(
         text="Note: do not paste this log into search_workspace `query`; use a short literal search phrase only.",
         priority=100,
         pinned=True,
+        metadata={"labels": "system_hint"},
     )
     if not steps:
-        return hint.text
+        return render_blocks([hint], separator="\n\n")
 
     older = steps[:-_PRIOR_CONTEXT_RECENT_STEPS]
     recent = steps[-_PRIOR_CONTEXT_RECENT_STEPS:]
     blocks: list[ContextBlock] = [hint]
     if older:
-        failed_tools = _dedupe_keep_order([f"{step.tool}: {(step.error_detail or step.output or '').strip()[:180]}" for step in older if step.status == TaskStatus.FAILED])[:4]
+        failed_tools_raw = [
+            f"{step.tool}: {(step.error_detail or step.output or '').strip()[:180]}"
+            for step in older
+            if step.status == TaskStatus.FAILED
+        ]
+        failed_tools = _dedupe_keep_order(failed_tools_raw)[:4]
         lines = [f"Older rounds summary ({len(older)} steps):"]
         if failed_tools:
             lines.append("  failures:")
             lines.extend(f"  - {item}" for item in failed_tools)
-        older_outputs = _dedupe_keep_order(
-            [next((line.strip() for line in step.output.splitlines() if line.strip()), "") for step in older if step.output]
-        )[:4]
+        older_outputs_raw = [
+            next((line.strip() for line in step.output.splitlines() if line.strip()), "")
+            for step in older
+            if step.output
+        ]
+        older_outputs = _dedupe_keep_order(older_outputs_raw)[:4]
         if older_outputs:
             lines.append("  outputs:")
             lines.extend(f"  - {item[:180]}" for item in older_outputs if item)
-        blocks.append(ContextBlock(kind="memory_summary", text="\n".join(lines), priority=25))
+        deduped = len(failed_tools_raw) != len(_dedupe_keep_order(failed_tools_raw)) or len(
+            older_outputs_raw
+        ) != len(_dedupe_keep_order(older_outputs_raw))
+        block_labels = "rolling_summary,deduped" if deduped else "rolling_summary"
+        blocks.append(
+            ContextBlock(
+                kind="memory_summary",
+                text="\n".join(lines),
+                priority=25,
+                metadata={"labels": block_labels},
+            )
+        )
     for idx, step in enumerate(recent, start=1):
         blocks.append(
             _step_to_context_block(step, priority=80 - idx, step_output_max_tokens=step_output_max_tokens)
@@ -218,6 +243,7 @@ class Orchestrator:
             failed_rounds = 0
             round_idx = 0
             outcome_feedback: str | None = None
+            latest_round_succeeded = False
 
             while True:
                 prior = (
@@ -265,6 +291,7 @@ class Orchestrator:
                 accumulated.extend(batch)
 
                 if all(step.status == TaskStatus.COMPLETED for step in batch):
+                    latest_round_succeeded = True
                     self._stream({"type": "round_completed", "round": round_idx})
                     goal_check_error = False
                     if self._goal_check is not None and self._goal_check.is_available():
@@ -307,10 +334,12 @@ class Orchestrator:
                             )
                             continue
                     if goal_check_error and any(step.tool == "web_search" for step in batch):
+                        latest_round_succeeded = False
                         continue
                     break
 
                 failed_rounds += 1
+                latest_round_succeeded = False
                 self._stream(
                     {
                         "type": "round_failed",
@@ -325,7 +354,7 @@ class Orchestrator:
             executed_plan = accumulated
             success = (
                 bool(executed_plan)
-                and all(s.status == TaskStatus.COMPLETED for s in executed_plan)
+                and latest_round_succeeded
                 and not goal_exhausted
             )
 

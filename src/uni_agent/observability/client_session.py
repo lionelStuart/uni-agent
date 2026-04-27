@@ -217,26 +217,45 @@ def _extract_next_hints(result: TaskResult) -> list[str]:
 
 def _entry_to_context_block(entry: ClientSessionRunEntry, *, index: int, recent: bool) -> ContextBlock:
     lines = [f"{index}. [{entry.run_id or '?'}] status={entry.status}; task={entry.task[:200]!r}"]
+    deduped = False
     if entry.tools_used:
         lines.append(f"  tools: {', '.join(entry.tools_used[:8])}")
     if entry.key_findings:
+        findings = _dedupe_keep_order(entry.key_findings[:3])
+        deduped = deduped or len(entry.key_findings[:3]) != len(findings)
         lines.append("  findings:")
-        lines.extend(f"  - {item}" for item in entry.key_findings[:3])
+        lines.extend(f"  - {item}" for item in findings)
     if entry.failures:
+        failures = _dedupe_keep_order(entry.failures[:2])
+        deduped = deduped or len(entry.failures[:2]) != len(failures)
         lines.append("  failures:")
-        lines.extend(f"  - {item}" for item in entry.failures[:2])
+        lines.extend(f"  - {item}" for item in failures)
     if entry.next_hints:
+        hints = _dedupe_keep_order(entry.next_hints[:2])
+        deduped = deduped or len(entry.next_hints[:2]) != len(hints)
         lines.append("  next_hints:")
-        lines.extend(f"  - {item}" for item in entry.next_hints[:2])
+        lines.extend(f"  - {item}" for item in hints)
     priority = 90 - index if recent else 30 - index
-    return ContextBlock(kind="recent_turn" if recent else "memory_summary", text="\n".join(lines), priority=priority)
+    block = ContextBlock(
+        kind="recent_turn" if recent else "memory_summary",
+        text="\n".join(lines),
+        priority=priority,
+    )
+    if deduped:
+        block.metadata["labels"] = "deduped"
+    return block
 
 
 def _rolling_summary_block(entries: list[ClientSessionRunEntry]) -> ContextBlock | None:
     if not entries:
         return None
-    findings = _dedupe_keep_order([item for entry in entries for item in entry.key_findings])[:5]
-    failures = _dedupe_keep_order([item for entry in entries for item in entry.failures])[:4]
+    raw_findings = [item for entry in entries for item in entry.key_findings]
+    raw_failures = [item for entry in entries for item in entry.failures]
+    findings = _dedupe_keep_order(raw_findings)[:5]
+    failures = _dedupe_keep_order(raw_failures)[:4]
+    deduped_findings = len(raw_findings) != len(_dedupe_keep_order(raw_findings))
+    deduped_failures = len(raw_failures) != len(_dedupe_keep_order(raw_failures))
+    deduped = deduped_findings or deduped_failures
     tasks = [entry.task[:100] for entry in entries[-3:]]
     lines = [f"Older session summary ({len(entries)} runs):"]
     if tasks:
@@ -247,7 +266,10 @@ def _rolling_summary_block(entries: list[ClientSessionRunEntry]) -> ContextBlock
     if failures:
         lines.append("  repeated_failures:")
         lines.extend(f"  - {item}" for item in failures)
-    return ContextBlock(kind="memory_summary", text="\n".join(lines), priority=20)
+    block = ContextBlock(kind="memory_summary", text="\n".join(lines), priority=20, metadata={"labels": "rolling_summary"})
+    if deduped:
+        block.metadata["labels"] = "rolling_summary,deduped"
+    return block
 
 
 def build_session_context_for_planner(

@@ -17,6 +17,8 @@ from uni_agent.config.settings import (
     parse_sandbox_allowed_commands,
 )
 from uni_agent.observability.logging import configure_logging
+from uni_agent.observability.langfuse import build_langfuse_stream_handler
+from uni_agent.observability.streaming import compose_stream_callbacks
 from uni_agent.observability.task_store import TaskStore
 from uni_agent.sandbox.runner import LocalSandbox, prompt_tty_approve_disallowed_command
 from uni_agent.skills.loader import SkillLoader
@@ -45,6 +47,9 @@ def build_orchestrator(
     :param max_failed_rounds_override: If set, replaces ``orchestrator_max_failed_rounds`` for this instance.
     """
     settings = settings or get_settings()
+    composed_stream_event = compose_stream_callbacks(
+        [stream_event, build_langfuse_stream_handler(settings)]
+    )
     configure_logging(settings.log_level)
     tool_registry = ToolRegistry()
     tool_registry.register_builtin_tools(
@@ -150,7 +155,7 @@ def build_orchestrator(
         max_step_retries=settings.tool_step_retries,
         max_failed_rounds=max_rounds,
         conclusion_synthesizer=conclusion_syn,
-        stream_event=stream_event,
+        stream_event=composed_stream_event,
         goal_check=goal_check,
         plan_goal_check_max_replan_rounds=settings.plan_goal_check_max_replan_rounds,
         context_budgets=context_budgets,

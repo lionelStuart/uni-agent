@@ -57,15 +57,15 @@ class FailThenSucceedPlanner(Planner):
         ]
 
 
-def test_orchestrator_replans_last_round_ok_but_overall_failed_if_earlier_steps_failed(
+def test_orchestrator_replans_last_round_ok_even_with_earlier_failures(
     tmp_path: Path,
 ) -> None:
-    """A later successful batch does not mask FAILED steps left in the accumulated plan."""
+    """Later successful batches can override earlier failed batches."""
     orchestrator = _runtime(tmp_path, FailThenSucceedPlanner(), max_failed_rounds=5)
 
     result = orchestrator.run("loop test")
 
-    assert result.status.value == "failed"
+    assert result.status.value == "completed"
     assert result.orchestrator_failed_rounds == 2
     assert any(step.tool == "shell_exec" and step.status.value == "failed" for step in result.plan)
     assert any(step.tool == "shell_exec" and step.status.value == "completed" for step in result.plan)
