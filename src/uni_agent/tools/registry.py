@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from uni_agent.config.settings import DelegateToolProfile
-from uni_agent.shared.models import ToolSpec
+from uni_agent.shared.models import ToolResult, ToolSpec
 
 _READONLY_TOOL_NAMES = frozenset(
     {"file_read", "search_workspace", "memory_search", "command_lookup"}
@@ -102,9 +102,9 @@ def _core_builtin_specs() -> tuple[ToolSpec, ...]:
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
-        self._handlers: dict[str, Callable[[dict], str]] = {}
+        self._handlers: dict[str, Callable[[dict], str | ToolResult]] = {}
 
-    def register(self, tool: ToolSpec, handler: Callable[[dict], str] | None = None) -> None:
+    def register(self, tool: ToolSpec, handler: Callable[[dict], str | ToolResult] | None = None) -> None:
         self._tools[tool.name] = tool
         if handler is not None:
             self._handlers[tool.name] = handler
@@ -129,15 +129,21 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return [tool.name for tool in self.list_tools()]
 
-    def attach_handler(self, tool_name: str, handler: Callable[[dict], str]) -> None:
+    def attach_handler(self, tool_name: str, handler: Callable[[dict], str | ToolResult]) -> None:
         if tool_name not in self._tools:
             raise KeyError(f"Tool '{tool_name}' is not registered.")
         self._handlers[tool_name] = handler
 
     def execute(self, tool_name: str | None, arguments: dict) -> str:
+        return self.execute_result(tool_name, arguments).text
+
+    def execute_result(self, tool_name: str | None, arguments: dict) -> ToolResult:
         if not tool_name:
             raise ValueError("Plan step does not define a tool.")
         handler = self._handlers.get(tool_name)
         if handler is None:
             raise KeyError(f"Tool '{tool_name}' has no execution handler.")
-        return handler(arguments)
+        result = handler(arguments)
+        if isinstance(result, ToolResult):
+            return result
+        return ToolResult.from_text(str(result))

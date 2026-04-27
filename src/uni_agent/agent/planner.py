@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import re
 
+from uni_agent.agent.intent_router import DELEGATE_USER_INTENT_PATTERN, IntentRouter
 from uni_agent.shared.models import PlanStep, SkillSpec, ToolSpec
-
-# User explicitly asks for a nested run — short-circuit like ``memory_search`` so
-# ``file_read`` / search heuristics do not win (see system prompt alignment).
-DELEGATE_USER_INTENT_PATTERN = re.compile(r"(?i)(delegate_task|子代理|sub-agent|\bsubagent\b)")
 
 
 class Planner:
@@ -88,6 +85,12 @@ class HeuristicPlanner(Planner):
         re.compile(r"(?i)(?:write|写入)\s+(?P<path>[\w./-]+\.[A-Za-z0-9]+)\s*[:=]\s*'(?P<content>[^']*)'"),
     )
 
+    def __init__(self) -> None:
+        self._intent_router = IntentRouter(
+            memory_query=self._memory_search_query,
+            web_query=self._web_search_query,
+        )
+
     def create_plan(
         self,
         task: str,
@@ -117,41 +120,13 @@ class HeuristicPlanner(Planner):
 
         skip_shortcuts = bool(prior_context or outcome_feedback)
         if not skip_shortcuts:
-            mem_q = self._memory_search_query(task.strip())
-            if mem_q is not None and "memory_search" in allowed_tools:
-                return [
-                    PlanStep(
-                        id="step-1",
-                        description=f"Search saved session memory for: {mem_q[:120]!r}.",
-                        tool="memory_search",
-                        skill=selected_skill,
-                        arguments={"query": mem_q},
-                    )
-                ]
-
-            stripped_task = task.strip()
-            if DELEGATE_USER_INTENT_PATTERN.search(stripped_task) and "delegate_task" in allowed_tools:
-                return [
-                    PlanStep(
-                        id="step-1",
-                        description="Run nested agent (user explicitly requested sub-agent / delegate_task).",
-                        tool="delegate_task",
-                        skill=selected_skill,
-                        arguments={"task": stripped_task},
-                    )
-                ]
-
-            web_q = self._web_search_query(stripped_task)
-            if web_q is not None and "web_search" in allowed_tools:
-                return [
-                    PlanStep(
-                        id="step-1",
-                        description=f"Search the public web for: {web_q[:120]!r}.",
-                        tool="web_search",
-                        skill=selected_skill,
-                        arguments={"query": web_q},
-                    )
-                ]
+            routed = self._intent_router.route(
+                task,
+                allowed_tools=allowed_tools,
+                selected_skill=selected_skill,
+            )
+            if routed is not None:
+                return routed
 
         steps: list[PlanStep] = []
         follow_up_urls = self._extract_follow_up_fetch_urls(task, prior_context)

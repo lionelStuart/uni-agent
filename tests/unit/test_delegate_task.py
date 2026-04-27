@@ -89,3 +89,8 @@ def test_delegate_handler_outside_run_returns_failed_text(monkeypatch: pytest.Mo
     out = reg.execute("delegate_task", {"task": "hello"})
     assert "STATUS=failed" in out or "failed" in out.lower()
     assert "CHILD_RUN_ID=" in out
+
+    structured = reg.execute_result("delegate_task", {"task": "hello"})
+    assert structured.status == "error"
+    assert structured.payload["status"] == "failed"
+    assert structured.error_code == "delegate_context_missing"

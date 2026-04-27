@@ -23,7 +23,7 @@ class Executor:
             for attempt in range(self.max_step_retries + 1):
                 running_step = step.model_copy(update={"status": TaskStatus.RUNNING})
                 try:
-                    result = self.tool_registry.execute(running_step.tool, running_step.arguments)
+                    result = self.tool_registry.execute_result(running_step.tool, running_step.arguments)
                 except Exception as exc:
                     failure_code = _classify_failure(exc)
                     failed_step = running_step.model_copy(
@@ -45,7 +45,8 @@ class Executor:
                 done = running_step.model_copy(
                     update={
                         "status": TaskStatus.COMPLETED,
-                        "output": result,
+                        "output": result.text,
+                        "tool_result": result.model_dump(),
                     }
                 )
                 executed_steps.append(done)

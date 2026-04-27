@@ -10,11 +10,12 @@
 
 | 模型 | 职责 |
 |------|------|
-| `TaskStatus` | 步骤/任务生命周期：`pending` → `running` → `completed` / `failed`。 |
+| `TaskStatus` | 步骤/任务生命周期：`pending` → `running` → `completed` / `failed`，并预留 `blocked`、`skipped`、`partial`、`needs_review` 等 harness 状态。 |
 | `ToolSpec` | 注册表中的工具：名称、描述、风险等级、`input_schema`。 |
+| `ToolResult` | 工具执行结果 envelope：`status`、`summary`、`text`、`payload`、`artifacts`、`warnings`、`retryable`、`error_code`；旧 handler 返回字符串时自动包装。 |
 | `SkillSpec` | 本地 skill：元数据（`name`、`version`、`description`、`triggers`、`priority`）、`allowed_tools` / `required_tools`（可选；**不**限制规划器可见工具）、路径 `path`；加载器还会填充 `instruction_text`、`reference_paths`、`script_paths`、`skill_load_format`。 |
-| `PlanStep` | **原子执行单元**：`id`、`description`、`tool`、`skill`（可选）、`arguments`、`status`、`output`、失败时的 `error_*` / `failure_code`。 |
-| `TaskResult` | **单次 run 的结果**：`run_id`、`task`、`status`、`selected_skills`、`available_tools`、**累积的** `plan`、`output`、`error`、`orchestrator_failed_rounds`、`conclusion`。 |
+| `PlanStep` | **原子执行单元**：`id`、`description`、`tool`、`skill`（可选）、`arguments`、`status`、`output`、失败时的 `error_*` / `failure_code`，以及 `tool_result` / `verifications`。 |
+| `TaskResult` | **单次 run 的结果**：`run_id`、`task`、`status`、`selected_skills`、`available_tools`、**累积的** `plan`、`output`、`error`、`orchestrator_failed_rounds`、`conclusion`、`working_memory`、`run_stats`。 |
 | `TaskRunRecord` | 落盘封装：`run_id` + `TaskResult`（供回放）。 |
 
 关系可概括为：**TaskResult 由多条 PlanStep 组成；每步绑定一个 tool，并可标注来源 skill；工具与 skill 的静态描述分别对应 ToolSpec 与 SkillSpec。**
@@ -43,8 +44,10 @@
    - `session_context`：交互客户端传入的会话压缩摘要。  
    - Planner 实现：`HeuristicPlanner` 与/或 `PydanticAIPlanner`（LLM 结构化计划，可回退启发式）；共享部分意图短路（如回忆类 → `memory_search`；其后若任务含 **委派显式关键词** → 单步 `delegate_task`，见 `agent/planner.py` 中 `DELEGATE_USER_INTENT_PATTERN`）。
 3. `executor.execute(plan)` 逐步调用工具；步骤 id 会加上轮次前缀 `r{n}-`。
-4. 若本批**全部** `completed` → 成功结束循环。  
-5. 否则 `failed_rounds` 递增，将本轮结果并入 `accumulated`，下一轮带着新的 `prior_context` **再规划**；若空计划或持续失败，计数至 `max_failed_rounds` 则停止。
+4. 每步执行后更新 run 内 `RunWorkingMemory`，并运行 `StepVerifier`；结果写入步骤 `verifications` 并通过 `step_verified` 事件输出。
+5. 每轮执行后运行 `LoopGuard`，检测重复动作、重复失败或无进展空输出；命中后可注入 `outcome_feedback` 触发 replan，或提前 fail-fast。
+6. 若本批**全部** `completed` 且未被 loop guard 拦截 → 成功结束循环。  
+7. 否则 `failed_rounds` 递增，将本轮结果并入 `accumulated`，下一轮带着新的 `prior_context` 与 working memory digest **再规划**；若空计划或持续失败，计数至 `max_failed_rounds` 则停止。
 
 **成功判定（当前实现）**：累积 `plan` 中**每一步**均为 `completed` 时任务为 `completed`；若存在未修复的失败步骤或轮次耗尽，则为 `failed`（详见设计文档 §7.2）。
 
@@ -52,6 +55,7 @@
 
 - 拼接各步 `output` 为总 `output`；失败时写入 `error`。
 - `conclusion`：先规则摘要，若配置 LLM 再合成。
+- `run_stats`：汇总状态、工具、失败类型、verifier 结果、goal-check mismatch 与 loop-guard 命中情况，便于后续失败分析。
 - 保存 `TaskResult` 至任务日志目录；可选通过 `stream_event` 输出 NDJSON 事件（`run_begin`、`round_plan`、`step_finished`、`round_failed`、`conclusion_*`、`run_end`）。
 
 ### 2.5 内置工具与 Skill 的关系
@@ -90,4 +94,5 @@
 
 - [设计文档](./设计文档.md) — 目标边界、架构图、模块职责
 - [开发文档](./开发文档.md) — 实现细节与目录
+- [Agent 研发预研与最佳实践](./Agent研发预研与最佳实践.md) — 外部 best practice、harness 与 loop 方法论
 - [Skills 目录与 SKILL 说明](./Skills目录与SKILL说明.md) — skill 磁盘布局与 `SKILL.md` 约定

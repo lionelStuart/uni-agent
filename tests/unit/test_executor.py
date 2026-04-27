@@ -60,6 +60,7 @@ def test_executor_retries_until_success() -> None:
 
     assert executed[0].status == TaskStatus.COMPLETED
     assert executed[0].output == "ok"
+    assert executed[0].tool_result["text"] == "ok"
     assert attempts["count"] == 2
 
 

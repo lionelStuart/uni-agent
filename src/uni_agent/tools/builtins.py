@@ -13,6 +13,8 @@ from uni_agent.tools.delegate_format import (
     MAX_DELEGATE_CONTEXT_CHARS,
     MAX_DELEGATE_SESSION_APPEND_CHARS,
     MAX_DELEGATE_TASK_CHARS,
+    delegate_exception_payload,
+    delegate_result_payload,
     format_delegate_exception,
     format_delegate_result,
     truncate as _truncate_delegate_text,
@@ -26,6 +28,7 @@ from uni_agent.agent.llm import LLMProvider
 from uni_agent.agent.memory_llm_search import run_memory_search_llm
 from uni_agent.observability.local_memory import search_memory_directory
 from uni_agent.sandbox.runner import LocalSandbox
+from uni_agent.shared.models import ToolResult
 from uni_agent.tools.command_lookup import run_command_lookup
 from uni_agent.tools.http_fetch_policy import (
     assert_http_fetch_host_allowlist,
@@ -489,7 +492,7 @@ def register_builtin_handlers(
 
     if enable_delegate_tool and "delegate_task" in tool_registry._tools:
 
-        def delegate_task(arguments: dict) -> str:
+        def delegate_task(arguments: dict) -> ToolResult:
             from uni_agent.agent import run_context
             from uni_agent.bootstrap import build_orchestrator
             from uni_agent.config.settings import get_settings
@@ -505,11 +508,16 @@ def register_builtin_handlers(
 
             parent_rid = run_context.get_run_id()
             if not parent_rid:
-                return format_delegate_exception(
-                    RuntimeError(
-                        "delegate_task outside an active orchestrator run (missing parent run_id context)."
-                    ),
-                    parent_run_id=None,
+                exc = RuntimeError(
+                    "delegate_task outside an active orchestrator run (missing parent run_id context)."
+                )
+                text = format_delegate_exception(exc, parent_run_id=None)
+                return ToolResult(
+                    status="error",
+                    summary="delegate_task failed before starting child run",
+                    text=text,
+                    payload=delegate_exception_payload(exc, parent_run_id=None),
+                    error_code="delegate_context_missing",
                 )
 
             parts: list[str] = [_truncate_delegate_text(task.strip(), MAX_DELEGATE_TASK_CHARS)]
@@ -543,9 +551,23 @@ def register_builtin_handlers(
                     max_failed_rounds_override=child_max,
                 )
                 child_result = child_orch.run(effective, parent_run_id=parent_rid)
-                return format_delegate_result(child=child_result, parent_run_id=parent_rid)
+                text = format_delegate_result(child=child_result, parent_run_id=parent_rid)
+                return ToolResult(
+                    status="ok" if child_result.status.value == "completed" else "error",
+                    summary=f"child run {child_result.run_id or ''} {child_result.status.value}",
+                    text=text,
+                    payload=delegate_result_payload(child=child_result, parent_run_id=parent_rid),
+                    error_code="child_run_failed" if child_result.status.value == "failed" else None,
+                )
             except Exception as exc:
-                return format_delegate_exception(exc, parent_run_id=parent_rid)
+                text = format_delegate_exception(exc, parent_run_id=parent_rid)
+                return ToolResult(
+                    status="error",
+                    summary="delegate_task failed",
+                    text=text,
+                    payload=delegate_exception_payload(exc, parent_run_id=parent_rid),
+                    error_code="delegate_exception",
+                )
 
         tool_registry.attach_handler("delegate_task", delegate_task)
 

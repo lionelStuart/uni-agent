@@ -17,9 +17,13 @@ from typing import Any
 
 from uni_agent.agent import run_context
 from uni_agent.agent.executor import Executor
+from uni_agent.agent.loop_guard import LoopGuard
 from uni_agent.agent.planner import Planner
 from uni_agent.agent.goal_check import GoalCheckSynthesizer
 from uni_agent.agent.run_conclusion import RunConclusionSynthesizer, fallback_run_conclusion
+from uni_agent.agent.run_stats import build_run_stats
+from uni_agent.agent.verifier import StepVerifier
+from uni_agent.agent.working_memory import RunWorkingMemory
 from uni_agent.context.budgeting import ContextBudgets, derive_context_budgets
 from uni_agent.context.token_budget import ContextBlock, fit_blocks_to_budget, render_blocks
 from uni_agent.observability.task_store import TaskStore
@@ -170,6 +174,8 @@ class Orchestrator:
         self._goal_check = goal_check
         self._plan_goal_check_max_replan_rounds = max(0, plan_goal_check_max_replan_rounds)
         self._context_budgets = context_budgets or _DEFAULT_BUDGETS
+        self._step_verifier = StepVerifier()
+        self._loop_guard = LoopGuard()
 
     def _stream(self, event: dict[str, Any]) -> None:
         if self._stream_event is not None:
@@ -223,6 +229,9 @@ class Orchestrator:
 
         goal_exhausted = False
         goal_mismatch_count = 0
+        working_memory = RunWorkingMemory()
+        loop_guard_error: str | None = None
+        loop_guard_events: list[dict[str, Any]] = []
         if plan_override is not None:
             ov_summaries = [
                 {"id": s.id, "tool": s.tool, "description": s.description} for s in plan_override
@@ -236,6 +245,7 @@ class Orchestrator:
                 1,
                 self.executor.execute(plan_override, on_step_complete=_on_step),
             )
+            executed_plan = self._process_completed_steps(executed_plan, working_memory, round_idx=1)
             success = bool(executed_plan) and all(s.status == TaskStatus.COMPLETED for s in executed_plan)
             failed_rounds = 0 if success else 1
         else:
@@ -255,6 +265,9 @@ class Orchestrator:
                     if accumulated
                     else None
                 )
+                if working_memory.actions_attempted:
+                    memory_digest = working_memory.render_digest()
+                    prior = f"{prior}\n\n{memory_digest}" if prior else memory_digest
                 plan = self.planner.create_plan(
                     task,
                     selected_skills,
@@ -288,7 +301,29 @@ class Orchestrator:
                     self._stream({"type": "step_finished", "round": r, "step": step.model_dump()})
 
                 batch = _prefix_round(round_idx, self.executor.execute(plan, on_step_complete=_on_step))
+                batch = self._process_completed_steps(batch, working_memory, round_idx=round_idx)
                 accumulated.extend(batch)
+
+                loop_decision = self._loop_guard.check(working_memory, batch)
+                if loop_decision.triggered:
+                    loop_guard_events.append(loop_decision.model_dump())
+                    self._stream(
+                        {
+                            "type": "loop_guard",
+                            "round": round_idx,
+                            "code": loop_decision.code,
+                            "reason": loop_decision.reason,
+                            "suggested_action": loop_decision.suggested_action,
+                        }
+                    )
+                    if loop_decision.suggested_action == "fail":
+                        latest_round_succeeded = False
+                        loop_guard_error = f"Loop guard: {loop_decision.code}: {loop_decision.reason}"
+                        break
+                    if loop_decision.suggested_action == "replan":
+                        outcome_feedback = f"Loop guard requested re-plan: {loop_decision.reason}"
+                        latest_round_succeeded = False
+                        continue
 
                 if all(step.status == TaskStatus.COMPLETED for step in batch):
                     latest_round_succeeded = True
@@ -373,6 +408,8 @@ class Orchestrator:
                 f"{self._plan_goal_check_max_replan_rounds} re-plan round(s) following completed tool steps. "
                 f"Last review rounds (not satisfied): {goal_mismatch_count}."
             )
+        if not success and error is None and loop_guard_error:
+            error = loop_guard_error
         if not success and error is None:
             error = (
                 f"Stopped after {failed_rounds} failed replan round(s) "
@@ -404,6 +441,12 @@ class Orchestrator:
             goal_check_mismatch_rounds=goal_mismatch_count,
             conclusion=conclusion,
             parent_run_id=parent_run_id,
+            working_memory=working_memory.model_dump(),
+            run_stats=build_run_stats(
+                executed_plan,
+                goal_check_mismatch_rounds=goal_mismatch_count,
+                loop_guard_events=loop_guard_events,
+            ),
         )
         self.task_store.save(result)
         self._stream(
@@ -418,3 +461,26 @@ class Orchestrator:
 
     def replay(self, run_id: str) -> TaskResult:
         return self.task_store.load(run_id).result
+
+    def _process_completed_steps(
+        self,
+        steps: list[PlanStep],
+        working_memory: RunWorkingMemory,
+        *,
+        round_idx: int,
+    ) -> list[PlanStep]:
+        processed: list[PlanStep] = []
+        for step in steps:
+            working_memory.record_step(step)
+            verification = self._step_verifier.verify_step(step, working_memory)
+            verified_step = step.model_copy(update={"verifications": [verification.model_dump()]})
+            self._stream(
+                {
+                    "type": "step_verified",
+                    "round": round_idx,
+                    "step_id": verified_step.id,
+                    "verification": verification.model_dump(),
+                }
+            )
+            processed.append(verified_step)
+        return processed

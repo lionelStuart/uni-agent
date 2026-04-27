@@ -42,6 +42,18 @@ def format_delegate_result(
     return "\n".join(lines)
 
 
+def delegate_result_payload(*, child: TaskResult, parent_run_id: str | None) -> dict:
+    return {
+        "child_run_id": child.run_id or "",
+        "parent_run_id": parent_run_id or "",
+        "status": child.status.value,
+        "conclusion": child.conclusion or "",
+        "output_snippet": truncate(child.output or "", OUTPUT_SNIPPET_CHARS).strip(),
+        "error": child.error or "",
+        "child_run_stats": child.run_stats,
+    }
+
+
 def format_delegate_exception(exc: BaseException, *, parent_run_id: str | None) -> str:
     pr = parent_run_id or ""
     return "\n".join(
@@ -58,3 +70,15 @@ def format_delegate_exception(exc: BaseException, *, parent_run_id: str | None) 
             f"ERROR: {exc}",
         ]
     )
+
+
+def delegate_exception_payload(exc: BaseException, *, parent_run_id: str | None) -> dict:
+    return {
+        "child_run_id": "",
+        "parent_run_id": parent_run_id or "",
+        "status": TaskStatus.FAILED.value,
+        "conclusion": "",
+        "output_snippet": "",
+        "error": str(exc),
+        "child_run_stats": {},
+    }

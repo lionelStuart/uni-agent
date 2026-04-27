@@ -13,6 +13,10 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    BLOCKED = "blocked"
+    SKIPPED = "skipped"
+    PARTIAL = "partial"
+    NEEDS_REVIEW = "needs_review"
 
 
 class ToolSpec(BaseModel):
@@ -20,6 +24,22 @@ class ToolSpec(BaseModel):
     description: str
     risk_level: str = "low"
     input_schema: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolResult(BaseModel):
+    status: Literal["ok", "error", "partial"] = "ok"
+    summary: str = ""
+    text: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+    artifacts: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    retryable: bool = False
+    error_code: str | None = None
+
+    @classmethod
+    def from_text(cls, text: str) -> "ToolResult":
+        summary = _first_non_empty_line(text)
+        return cls(summary=summary, text=text)
 
 
 class SkillSpec(BaseModel):
@@ -49,6 +69,8 @@ class PlanStep(BaseModel):
     error_type: str | None = None
     error_detail: str | None = None
     failure_code: str | None = None
+    verifications: list[dict[str, Any]] = Field(default_factory=list)
+    tool_result: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskResult(BaseModel):
@@ -67,6 +89,8 @@ class TaskResult(BaseModel):
     )
     conclusion: str | None = None
     parent_run_id: str | None = None
+    working_memory: dict[str, Any] = Field(default_factory=dict)
+    run_stats: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskRunRecord(BaseModel):
@@ -74,3 +98,11 @@ class TaskRunRecord(BaseModel):
     task: str
     status: TaskStatus
     result: TaskResult
+
+
+def _first_non_empty_line(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:300]
+    return ""
