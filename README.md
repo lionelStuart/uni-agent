@@ -24,7 +24,7 @@
 - 本地记忆：`memory_search`、交互式 `memory search`、空闲自动抽取到 `.uni-agent/memory`
 - DuckDuckGo 网页搜索：`web_search` 内置工具可返回标题、URL 和摘要片段
 - 子代理委派：`delegate_task` 启动单层子 `Orchestrator.run`，支持只读工具集
-- 最终答案与历史结论：结果中包含面向用户的 `answer` 和运行摘要 `conclusion`，均支持规则 fallback 与可选 LLM 合成
+- 最终答案与历史结论：结果中包含保留任务细节的用户答复 `answer` 和短运行摘要 `conclusion`，均支持规则 fallback 与可选 LLM 合成
 - 轻量评测：`uni-agent eval` 批量运行 YAML case，并基于目标、轨迹、效率、稳定性、安全和默认 LLM judge 给出综合评分
 
 ## 内置工具
@@ -116,7 +116,7 @@ from uni_agent.sdk import (
 - `storage_namespace` 会把任务日志与 memory 目录隔离到 `<workspace>/.uni-agent/.../<namespace>/`
 - 当 `global_system_prompt` 未设置时，会基于 `name` 与 `description` 生成默认人设前缀
 - `ca_bundle` 用于给 `http_fetch` / `web_search` 提供显式 CA bundle；相对路径以 `workspace` 为基准
-- `context_window_tokens` 默认是 `256000`；用于推导 `session_context`、`prior_context`、goal-check 和 conclusion 的 token 压缩预算
+- `context_window_tokens` 默认是 `256000`；用于推导 `session_context`、`prior_context`、goal-check、answer 和 conclusion 的 token 压缩预算；`answer` 会使用比短摘要更大的证据预算
 - `skip_tls_verify` 默认开启，`http_fetch` / `web_search` 会跳过 TLS 证书校验；如需恢复严格校验，可显式设为 `false` 或改用 `ca_bundle`
 - `plan_goal_check_enabled` 默认开启；当一轮工具都执行成功但答案仍不完整时，会触发一次 LLM 复核并推动后续重规划
 - `observability_langfuse_enabled` 与凭据字段用于将 `stream_event`（以及子代理事件）导入 Langfuse；未安装 `langfuse` 包时自动降级

@@ -15,7 +15,29 @@ _DEFAULT_BUDGETS = derive_context_budgets(256_000)
 
 
 class _AnswerSchema(BaseModel):
-    answer: str = Field(description="Final answer to the user's task, grounded in the execution log.")
+    answer: str = Field(
+        description=(
+            "Final user-facing answer grounded in the execution log. Preserve task-relevant details; "
+            "do not collapse detailed requested content into only a brief summary."
+        )
+    )
+
+
+def _answer_digest_budgets(context_budgets: ContextBudgets) -> tuple[int, int, int]:
+    """Answer synthesis needs more evidence than the short run conclusion."""
+    max_tokens = min(
+        max(context_budgets.conclusion_max_tokens * 3, 12_000),
+        max(context_budgets.context_window_tokens // 2, 12_000),
+    )
+    step_output_max_tokens = min(
+        max(context_budgets.conclusion_step_output_max_tokens * 4, 2_048),
+        8_192,
+    )
+    aggregate_output_max_tokens = min(
+        max(context_budgets.conclusion_aggregate_output_max_tokens * 4, 4_096),
+        16_384,
+    )
+    return max_tokens, step_output_max_tokens, aggregate_output_max_tokens
 
 
 def fallback_run_answer(
@@ -76,15 +98,23 @@ class RunAnswerSynthesizer:
         output: str,
         error: str | None,
     ) -> str:
+        max_tokens, step_output_max_tokens, aggregate_output_max_tokens = _answer_digest_budgets(
+            self._context_budgets
+        )
         digest = build_execution_digest(
             task,
             status,
             steps,
             output,
             error,
-            max_tokens=self._context_budgets.conclusion_max_tokens,
-            step_output_max_tokens=self._context_budgets.conclusion_step_output_max_tokens,
-            aggregate_output_max_tokens=self._context_budgets.conclusion_aggregate_output_max_tokens,
+            max_tokens=max_tokens,
+            step_output_max_tokens=step_output_max_tokens,
+            aggregate_output_max_tokens=aggregate_output_max_tokens,
         )
-        result = self._agent.run_sync(f"Execution log:\n{digest}\n\nWrite the final answer for the user.")
+        result = self._agent.run_sync(
+            "Execution log:\n"
+            f"{digest}\n\n"
+            "Write the final answer for the user. Preserve all task-relevant details from the log; "
+            "do not reduce detailed requested content to only a high-level summary."
+        )
         return result.output.answer.strip()

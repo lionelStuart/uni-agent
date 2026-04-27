@@ -117,16 +117,26 @@ def _human_stream_event(ev: dict[str, Any]) -> None:
             fg=typer.colors.YELLOW,
             err=True,
         )
+    elif t == "answer_begin":
+        typer.secho(f"{ind}· generating final answer…", dim=True, err=True)
+    elif t == "answer_done":
+        answer = ev.get("answer") or ""
+        if sub:
+            typer.secho(f"\n{ind}── sub-agent answer ──", fg=typer.colors.BLUE, err=True)
+        else:
+            typer.secho("\n── answer ──", fg=typer.colors.GREEN, err=True)
+        for line in (answer or "").splitlines() or [""]:
+            typer.secho(f"{ind}{line}", err=True)
     elif t == "conclusion_begin":
         typer.secho(f"{ind}· generating conclusion…", dim=True, err=True)
     elif t == "conclusion_done":
         concl = ev.get("conclusion") or ""
         if sub:
-            typer.secho(f"\n{ind}── sub-agent conclusion ──", fg=typer.colors.BLUE, err=True)
+            typer.secho(f"\n{ind}── sub-agent run summary ──", fg=typer.colors.BLUE, dim=True, err=True)
         else:
-            typer.secho("\n── conclusion ──", fg=typer.colors.MAGENTA, err=True)
+            typer.secho("\n── run summary ──", fg=typer.colors.MAGENTA, dim=True, err=True)
         for line in (concl or "").splitlines() or [""]:
-            typer.secho(f"{ind}{line}", err=True)
+            typer.secho(f"{ind}{line}", dim=True, err=True)
     elif t == "run_end":
         rid = ev.get("run_id")
         st = ev.get("status")

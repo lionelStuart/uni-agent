@@ -54,8 +54,8 @@
 ### 2.4 收尾
 
 - 拼接各步 `output` 为总 `output`；失败时写入 `error`。
-- `answer`：先用规则 fallback 产出最终答案；若配置 LLM，则基于执行 digest 合成面向用户的回答。它与 `output` 分离，避免把原始工具日志直接当作最终回复。
-- `conclusion`：先规则摘要，若配置 LLM 再合成。
+- `answer`：先用规则 fallback 产出最终答案；若配置 LLM，则基于执行 digest 合成面向用户的回答。它与 `output` 分离，避免把原始工具日志直接当作最终回复；同时使用比短摘要更大的证据预算，避免把大模型/工具输出过度压缩。
+- `conclusion`：先规则摘要，若配置 LLM 再合成。它定位为短运行摘要，不应替代 `answer` 展示任务细节。
 - `run_stats`：汇总状态、工具、失败类型、verifier 结果、goal-check mismatch 与 loop-guard 命中情况，便于后续失败分析。
 - 保存 `TaskResult` 至任务日志目录；可选通过 `stream_event` 输出 NDJSON 事件（`run_begin`、`round_plan`、`step_finished`、`round_failed`、`answer_*`、`conclusion_*`、`run_end`）。
 

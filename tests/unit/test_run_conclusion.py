@@ -1,5 +1,6 @@
-from uni_agent.agent.answer_synthesis import fallback_run_answer
+from uni_agent.agent.answer_synthesis import _answer_digest_budgets, fallback_run_answer
 from uni_agent.agent.run_conclusion import build_execution_digest, fallback_run_conclusion
+from uni_agent.context.budgeting import derive_context_budgets
 from uni_agent.shared.models import PlanStep, TaskStatus
 
 
@@ -36,3 +37,13 @@ def test_fallback_answer_returns_output_for_success() -> None:
 
 def test_fallback_answer_returns_error_for_failure() -> None:
     assert fallback_run_answer("read", TaskStatus.FAILED, [], "", "missing") == "missing"
+
+
+def test_answer_digest_budget_is_larger_than_conclusion_budget() -> None:
+    budgets = derive_context_budgets(64_000)
+
+    max_tokens, step_output_max_tokens, aggregate_output_max_tokens = _answer_digest_budgets(budgets)
+
+    assert max_tokens > budgets.conclusion_max_tokens
+    assert step_output_max_tokens > budgets.conclusion_step_output_max_tokens
+    assert aggregate_output_max_tokens > budgets.conclusion_aggregate_output_max_tokens

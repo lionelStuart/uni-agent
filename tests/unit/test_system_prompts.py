@@ -1,5 +1,6 @@
 from uni_agent.agent.system_prompts import (
     DEFAULT_PLANNER_SYSTEM_PROMPT,
+    effective_answer_instructions,
     effective_conclusion_instructions,
     effective_planner_instructions,
 )
@@ -23,3 +24,9 @@ def test_global_prefix_prepended() -> None:
 def test_effective_conclusion_strips_empty_global() -> None:
     text = effective_conclusion_instructions(override="C", global_prefix="   ")
     assert text == "C"
+
+
+def test_default_answer_prompt_requires_preserving_details() -> None:
+    text = effective_answer_instructions(override=None, global_prefix=None)
+    assert "Preserve task-relevant details" in text
+    assert "Do not over-compress" in text
