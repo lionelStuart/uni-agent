@@ -60,6 +60,9 @@ def build_orchestrator(
             build_webhook_stream_handler(
                 webhook_url=settings.observability_webhook_url,
                 timeout_seconds=settings.observability_webhook_timeout_seconds,
+                session_id=settings.observability_session_id,
+                source=settings.observability_source,
+                workspace=str(settings.workspace.resolve()),
                 headers=parse_observability_webhook_headers(settings.observability_webhook_headers_json),
             ),
             build_sqlite_stream_handler(

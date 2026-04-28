@@ -51,3 +51,33 @@
 - 事件发出：`src/uni_agent/agent/orchestrator.py`（`self._stream({...})`）
 - 子流包装：`src/uni_agent/tools/delegation_stream.py`（`wrap_child_stream`）
 - SDK：`on_event` 与 `stream_event` 为同一回调类型：`StreamEventCallback`
+
+## Webhook / SQLite 规范化事件
+
+当配置了 observability webhook 或 SQLite sink 时，内部 `stream_event` 会被投影为稳定结构，再对外发送/落盘。固定字段包括：
+
+- `schema_version`
+- `event_index`
+- `event_id`
+- `type`
+- `session_id`
+- `run_id`
+- `parent_run_id`
+- `source`
+- `workspace`
+- `observed_at`
+- `task`
+- `status`
+- `round`
+- `selected_skills`
+- `delegation`
+- `step`
+- `answer`
+- `conclusion`
+- `raw`
+
+其中：
+
+- `step` 是裁剪后的步骤摘要，便于 WebUI 和 webhook 消费方直接展示
+- `raw` 保留原始内部事件，供向前兼容或调试使用
+- 未知字段应忽略，消费方应以 `type` + 固定字段为主

@@ -37,6 +37,7 @@ class SessionSummary:
 class RunSummary:
     run_id: str
     session_id: str
+    parent_run_id: str | None
     task: str
     status: str
     source: str
@@ -45,6 +46,7 @@ class RunSummary:
     error: str | None
     conclusion: str | None
     answer: str | None
+    output: str | None
     orchestrator_failed_rounds: int
 
 
@@ -372,31 +374,92 @@ class ObservabilitySqliteStore:
             )
 
     def list_sessions(self, *, limit: int = 50) -> list[SessionSummary]:
+        return self.search_sessions(limit=limit)
+
+    def search_sessions(
+        self,
+        *,
+        limit: int = 50,
+        source: str | None = None,
+        status: str | None = None,
+        query: str | None = None,
+    ) -> list[SessionSummary]:
+        clauses = ["1=1"]
+        params: list[Any] = []
+        if source:
+            clauses.append("source = ?")
+            params.append(source)
+        if status:
+            clauses.append("latest_status = ?")
+            params.append(status)
+        if query:
+            like = f"%{query}%"
+            clauses.append(
+                "(session_id LIKE ? OR workspace LIKE ? OR source LIKE ? OR COALESCE(latest_run_id, '') LIKE ?)"
+            )
+            params.extend([like, like, like, like])
         with self._connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT session_id, source, workspace, created_at, updated_at, run_count, latest_run_id, latest_status
                 FROM sessions
+                WHERE {' AND '.join(clauses)}
                 ORDER BY updated_at DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (*params, limit),
             ).fetchall()
         return [SessionSummary(**dict(row)) for row in rows]
 
-    def list_runs(self, session_id: str) -> list[RunSummary]:
+    def list_runs(
+        self,
+        session_id: str,
+        *,
+        status: str | None = None,
+        query: str | None = None,
+    ) -> list[RunSummary]:
+        clauses = ["session_id=?"]
+        params: list[Any] = [session_id]
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if query:
+            like = f"%{query}%"
+            clauses.append(
+                "(run_id LIKE ? OR task LIKE ? OR COALESCE(answer, '') LIKE ? OR COALESCE(conclusion, '') LIKE ? OR COALESCE(output, '') LIKE ?)"
+            )
+            params.extend([like, like, like, like, like])
         with self._connect() as conn:
             rows = conn.execute(
-                """
-                SELECT run_id, session_id, task, status, source, started_at, finished_at,
-                       error, conclusion, answer, orchestrator_failed_rounds
+                f"""
+                SELECT run_id, session_id, parent_run_id, task, status, source, started_at, finished_at,
+                       error, conclusion, answer, output, orchestrator_failed_rounds
                 FROM runs
-                WHERE session_id=?
+                WHERE {' AND '.join(clauses)}
                 ORDER BY COALESCE(started_at, finished_at) DESC, run_id DESC
                 """,
-                (session_id,),
+                tuple(params),
             ).fetchall()
         return [RunSummary(**dict(row)) for row in rows]
+
+    def get_run_detail(self, run_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT run_id, session_id, parent_run_id, task, status, source, workspace,
+                       started_at, finished_at, error, conclusion, answer, output,
+                       orchestrator_failed_rounds, result_payload
+                FROM runs
+                WHERE run_id=?
+                """,
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        payload = item.get("result_payload")
+        item["result_payload"] = json.loads(str(payload)) if payload else None
+        return item
 
     def get_session_payload(self, session_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -408,20 +471,34 @@ class ObservabilitySqliteStore:
             return None
         return json.loads(str(row["session_payload"]))
 
-    def list_events(self, session_id: str, run_id: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
-        query = """
+    def list_events(
+        self,
+        session_id: str,
+        run_id: str | None = None,
+        *,
+        event_type: str | None = None,
+        query: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        sql = """
             SELECT run_id, event_index, event_type, created_at, payload
             FROM events
             WHERE session_id=?
         """
         params: list[Any] = [session_id]
         if run_id is not None:
-            query += " AND run_id=?"
+            sql += " AND run_id=?"
             params.append(run_id)
-        query += " ORDER BY id DESC LIMIT ?"
+        if event_type:
+            sql += " AND event_type=?"
+            params.append(event_type)
+        if query:
+            sql += " AND payload LIKE ?"
+            params.append(f"%{query}%")
+        sql += " ORDER BY id DESC LIMIT ?"
         params.append(limit)
         with self._connect() as conn:
-            rows = conn.execute(query, tuple(params)).fetchall()
+            rows = conn.execute(sql, tuple(params)).fetchall()
         out: list[dict[str, Any]] = []
         for row in rows:
             payload = json.loads(str(row["payload"]))

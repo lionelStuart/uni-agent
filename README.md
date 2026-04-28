@@ -1,18 +1,146 @@
 # uni-agent
 
-可加载可插拔 **Skills** 的通用 **Agent Client**，同时提供：
+可加载可插拔 **Skills** 的通用 **Agent Client**。
 
-- 命令行入口：`uni-agent run|client|replay|skills|eval`
-- 进程内 SDK：`uni_agent.sdk`
-- 本地沙箱执行：`LocalSandbox`
-- 基于本地目录的 skill 自动发现与注入
+它适合这几类场景：
+
+- 在本地或受控环境里运行一个可执行任务的 agent
+- 用目录化 Skills 组织领域能力，而不是把所有逻辑塞进 prompt
+- 通过 CLI、SDK、WebUI 和回放能力观察一次 run 到底做了什么
+- 在 workspace 内安全地读写文件、执行命令、搜索内容和沉淀会话
+
+对外入口包括：
+
+- CLI：`uni-agent run|client|replay|skills|eval|webui`
+- SDK：`uni_agent.sdk`
+- 本地沙箱：`LocalSandbox`
+- 可插拔 Skills：基于本地目录自动发现与注入
+- 可观测性：任务落盘、SQLite、WebUI、Webhook、回放
+
+## 快速开始
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+```
+
+先从这三个命令开始：
+
+```bash
+uni-agent skills
+uni-agent run "read README.md"
+uni-agent client
+```
+
+如果你想看会话、run、步骤和事件：
+
+```bash
+uni-agent webui --host 127.0.0.1 --port 8765
+```
+
+打开 [http://127.0.0.1:8765](http://127.0.0.1:8765)。
+
+## 你可以怎么用
+
+### 1. 单次任务执行
+
+```bash
+uni-agent run "read README.md"
+```
+
+适合：
+
+- 一次性任务
+- shell / 文件 / 搜索驱动的问题排查
+- CI 或脚本里调用
+
+### 2. 多轮交互会话
+
+```bash
+uni-agent client
+```
+
+适合：
+
+- 连续追问
+- 会话上下文复用
+- 本地记忆抽取
+- 配合 WebUI 看每轮输入输出
+
+### 3. 进程内集成
+
+```python
+from pathlib import Path
+from uni_agent.sdk import AgentConfig, create_client
+
+client = create_client(
+    AgentConfig(
+        name="repo-agent",
+        workspace=Path(".").resolve(),
+        skills_dir=Path("skills").resolve(),
+    )
+)
+
+result = client.run("read README.md")
+print(result.answer or result.output)
+```
+
+适合：
+
+- 把 agent 嵌进自己的 Python 程序
+- 多 agent / 多 workspace 管理
+- 自定义 `on_event`、Webhook、SQLite 会话聚合
+
+## 功能模块架构
+
+```mermaid
+flowchart LR
+    user["User / Script / App"] --> entry["CLI or SDK"]
+
+    subgraph runtime["Agent Runtime"]
+        orchestrator["Orchestrator"]
+        planner["Planner\nheuristic / pydantic_ai"]
+        executor["Executor"]
+        memory["Session Context / Memory"]
+        llm["LLM Provider"]
+    end
+
+    subgraph capability["Capability Layer"]
+        skills["Skill Loader / Matcher"]
+        tools["Tool Registry"]
+        sandbox["Local Sandbox"]
+    end
+
+    subgraph observability["Observability"]
+        runs["Run Logs / Replay"]
+        sqlite["SQLite Store"]
+        webui["WebUI"]
+        webhook["Webhook"]
+        langfuse["Langfuse"]
+    end
+
+    entry --> orchestrator
+    orchestrator --> planner
+    orchestrator --> executor
+    orchestrator --> memory
+    planner --> llm
+    planner --> skills
+    executor --> tools
+    executor --> sandbox
+    orchestrator --> runs
+    orchestrator --> sqlite
+    sqlite --> webui
+    orchestrator --> webhook
+    orchestrator --> langfuse
+```
 
 ## 核心组成
 
 - **Agent Runtime**：`Orchestrator` + `Planner`（启发式 / PydanticAI）+ `Executor`
-- **Sandbox**：`LocalSandbox`，支持命令白名单、超时、可选交互批准
 - **Skills**：从本地 `skills/<name>/` 自动加载；优先读取 `SKILL.md`，否则回退到 `skill.yaml` + `entry`
-- **Observability**：任务落盘、历史回放、交互 session、本地记忆目录
+- **Tools + Sandbox**：统一工具注册、工作区文件访问、受控 shell 执行
+- **Observability**：任务落盘、历史回放、交互 session、SQLite、WebUI、Webhook、Langfuse
 
 ## 当前能力
 
@@ -225,6 +353,38 @@ uni-agent replay <run_id> --format steps
 
 session 默认落盘到 `UNI_AGENT_SESSION_DIR`，记忆默认落盘到 `UNI_AGENT_MEMORY_DIR`。
 
+### `webui`
+
+```bash
+# from repo root
+.venv/bin/python -m uni_agent.cli.main webui --host 127.0.0.1 --port 8765
+
+# or, if `uni-agent` is already installed in the environment
+uni-agent webui --host 127.0.0.1 --port 8765
+```
+
+- Open: `http://127.0.0.1:8765`
+- 从 `UNI_AGENT_OBSERVABILITY_SQLITE_PATH` 读取 observability 数据
+- 展示 session 列表、run 列表、run 详情、plan steps、session timeline、recent events
+- 支持按 `source`、`status`、关键词、`event_type` 筛选
+- 典型使用路径：
+  - 左侧 `Sessions`：按 session 维度切换会话，可先用 `Search sessions`、`Source`、`Status` 缩小范围
+  - 中间 `Runs`：查看当前 session 下的所有 run；点击某个 `run_id` 后，右侧详情会切到对应 run
+  - `Run Detail`：查看这次执行的输入 `task`、最终 `answer`、`conclusion`、`output`、`error`
+  - `Plan Steps`：查看每个步骤的 `tool`、状态和输出摘要，适合排查中间执行过程
+  - `Session Timeline`：按 client session 的轮次查看历史输入输出
+  - `Events`：查看规范化后的 observability events；配合 `Search runs/events` 和 `Event type` 可只看 `step_finished`、`run_end` 等事件
+- 适合的排查方式：
+  - 想看一次执行最终说了什么：看 `Run Detail`
+  - 想看为什么任务中途偏了：看 `Plan Steps` 和 `Events`
+  - 想看某个 interactive client 会话连续做了什么：看 `Session Timeline`
+- JSON API：
+  - `/api/sessions`
+  - `/api/runs?session=<session_id>`
+  - `/api/run?run=<run_id>`
+  - `/api/events?session=<session_id>&run=<run_id>&event_type=<type>`
+- 默认数据库路径：`<workspace>/.uni-agent/observability/observability.db`
+
 ## 本地运行
 
 ```bash
@@ -303,6 +463,29 @@ pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -e '.[
 - `UNI_AGENT_OBSERVABILITY_LANGFUSE_ENABLED` 可在不改事件监听代码的情况下把 `stream_event` 持久化到 Langfuse；未装依赖时自动跳过
 - `UNI_AGENT_OBSERVABILITY_SQLITE_PATH` 默认写到 workspace 下的 SQLite；`uni-agent webui` 直接读取这份 DB 展示会话与运行记录
 - `UNI_AGENT_OBSERVABILITY_SESSION_ID` 可把 CLI / SDK 多次 run 聚合进同一逻辑 session；未设置时单次 `run` 会自动按 `run_id` 分组
+- `UNI_AGENT_OBSERVABILITY_WEBHOOK_URL` 开启后，发送的是规范化后的 observability event，而不是原始内部 `stream_event`
+
+Webhook 事件固定包含：
+
+- `schema_version`
+- `event_index`
+- `event_id`
+- `type`
+- `session_id`
+- `run_id`
+- `parent_run_id`
+- `source`
+- `workspace`
+- `observed_at`
+- `task`
+- `status`
+- `round`
+- `selected_skills`
+- `delegation`
+- `step`
+- `answer`
+- `conclusion`
+- `raw`
 
 ## 输出目录
 
